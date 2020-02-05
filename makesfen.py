@@ -2,6 +2,7 @@ from itertools import zip_longest
 from more_itertools import split_before
 import pandas
 import pathlib
+import shogi.CSA
 
 
 def indexes(source, value):
@@ -16,11 +17,12 @@ skip_rate = 3800
 for csa_file in csa_files:
     print(csa_file)
 
+    notation = shogi.CSA.Parser.parse_file(csa_file)[0]
     lines = csa_file.read_text().splitlines()
 
     # 対局者名
-    black_name = lines[1]
-    white_name = lines[2]
+    black_name = notation['names'][shogi.BLACK]
+    white_name = notation['names'][shogi.WHITE]
 
     # レーティング
     rate_index = lines.index('+') + 2
@@ -44,7 +46,7 @@ for csa_file in csa_files:
 
     # 投了と入玉宣言勝ち、千日手以外で終局した場合は除外
     # summaryをチェックしているのは、%TORYOが送信された場合でもabnormalになっていることがあるため。
-    if result != 'TORYO' and result != 'KACHI' and result != 'SENNICHITE' or result != summary[0].upper():
+    if result not in ['TORYO', 'KACHI', 'SENNICHITE'] or result != summary[0].upper():
         continue
 
     # 指し手と消費時間、読み筋の組み合わせを取得
@@ -54,19 +56,10 @@ for csa_file in csa_files:
     move_list = [[a + b for a, b in zip_longest(x, ['', '', "'* 0"], fillvalue='')] if len(x) < 3 else x[:3] for x in move_list]
 
     # 勝利側のみを抽出
-    win = 'draw'
-    if result == 'TORYO' or result == 'KACHI':
-        black_summary = summary[1].split(' ')
-        white_summary = summary[2].split(' ')
-        if black_summary[1] == 'win':
-            move_list = move_list[::2]
-            win = 'black'
-        elif white_summary[1] == 'win':
-            move_list = move_list[1::2]
-            win = 'white'
-        else:
-            # 勝敗不明なため除外
-            continue
+    if notation['win'] == 'b':
+        move_list = move_list[::2]
+    elif notation['win'] == 'w':
+        move_list = move_list[1::2]
 
     # 指し手と評価値、読み筋の組み合わせを取得
     move_data = pandas.DataFrame(move_list, columns=['move', 'time', 'info'], )
@@ -84,11 +77,11 @@ for csa_file in csa_files:
     # 2. 後手勝利：後手側の評価値が終局まで150以下
     # 3. 引き分け：先手側の評価値が終局まで-10以上150以下かつ後手側の評価値が終局まで-150以上150以下
     values = move_data['value']
-    if win == 'black' and (values < -10).any():
+    if notation['win'] == 'b' and (values < -10).any():
         continue
-    if win == 'white' and (values > 150).any():
+    if notation['win'] == 'w' and (values > 150).any():
         continue
-    if win == 'draw':
+    if notation['win'] == '-':
         black_values = values[::2]
         white_values = values[1::2]
         if ((black_values < -10) | (black_values > 150)).any() or ((white_values < -150) | (white_values > 150)).any():
