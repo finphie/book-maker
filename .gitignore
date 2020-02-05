@@ -1,0 +1,14 @@
+# Visual Studio
+.vs/
+bin/
+obj/
+*Template.cs
+
+# Unity
+/Assets/*
+/Library/
+/Logs/
+/Temp/
+!/Assets/Finphie/
+!/Assets/*.meta
+Assembly-CSharp*.csproj
