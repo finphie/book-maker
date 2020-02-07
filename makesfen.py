@@ -10,12 +10,18 @@ def indexes(source, value):
     return [i for i, x in enumerate(source) if x.startswith(value)]
 
 
+def split_sfen(source):
+    position, game_ply = source.rsplit(' ', 1)
+    return position, int(game_ply)
+
+
 path = pathlib.Path('2020')
 csa_files = path.glob('**/*.csa')
 
 board = shogi.Board()
 skip_rate = 3800
-sfen = set(board.sfen())
+
+sfens = dict((split_sfen(board.sfen()),))
 
 for csa_file in tqdm(csa_files):
     notation = shogi.CSA.Parser.parse_file(csa_file)[0]
@@ -89,7 +95,9 @@ for csa_file in tqdm(csa_files):
                 break
 
             board.push_usi(data.move)
-            sfen.add(board.sfen())
+            position, game_ply = split_sfen(board.sfen())
+            if sfens.get(position, 999) > game_ply:
+                sfens[position] = game_ply
             board.push_usi(move_data['move'][data.Index + 1])
 
     # 後手勝利
@@ -117,7 +125,9 @@ for csa_file in tqdm(csa_files):
 
             board.push_usi(move_data['move'][data.Index - 1])
             board.push_usi(data.move)
-            sfen.add(board.sfen())
+            position, game_ply = split_sfen(board.sfen())
+            if sfens.get(position, 999) > game_ply:
+                sfens[position] = game_ply
 
     # 引き分け
     elif notation['win'] == '-':
@@ -133,4 +143,6 @@ for csa_file in tqdm(csa_files):
         board.reset()
         for data in move_data.itertuples():
             board.push_usi(data.move)
-            sfen.add(board.sfen())
+            position, game_ply = split_sfen(board.sfen())
+            if sfens.get(position, 999) > game_ply:
+                sfens[position] = game_ply
