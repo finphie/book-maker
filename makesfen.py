@@ -146,3 +146,8 @@ for csa_file in tqdm(csa_files):
             position, game_ply = split_sfen(board.sfen())
             if sfens.get(position, 999) > game_ply:
                 sfens[position] = game_ply
+
+# ファイル出力
+with pathlib.Path('book.sfen').open('w', encoding='utf_8') as f:
+    for position, game_ply in tqdm(sfens.items()):
+        f.write(f'{position} {game_ply}\n')
