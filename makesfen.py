@@ -68,8 +68,9 @@ for csa_file in csa_files:
     # 先手勝利
     if notation['win'] == 'b':
         # 1. 先手側が評価値を出力していない場合は除外
-        # 2. 先手側の評価値が終局まで-10以上
-        if (black_values == 0).all() or (black_values < -10).any():
+        # 2. 先手側の評価値が一度も2000以上にならない場合は除外
+        # 3. 先手側の評価値が終局まで-10以上
+        if (black_values == 0).all() or black_values.max() < 2000 or (black_values < -10).any():
             continue
 
         # 評価値0は定跡などの要因で出力される場合があるので無視する。
@@ -79,7 +80,7 @@ for csa_file in csa_files:
         # 直前の評価値から300以上下がった場合は除外
         if (black_values.diff() <= -300).any():
             continue
- 
+
         # sfen出力
         board = shogi.Board()
         for data in black_move_data.itertuples():
@@ -94,8 +95,9 @@ for csa_file in csa_files:
     # 後手勝利
     elif notation['win'] == 'w':
         # 1. 後手側が評価値を出力していない場合は除外
-        # 2. 後手側の評価値が終局まで150以下
-        if (white_values == 0).all() or (white_values > 150).any():
+        # 2. 後手側の評価値が一度も-2000以下にならない場合は除外
+        # 3. 後手側の評価値が終局まで150以下
+        if (white_values == 0).all() or white_values.min() > -2000 or (white_values > 150).any():
             continue
 
         # 評価値0は定跡などの要因で出力される場合があるので無視する。
