@@ -12,8 +12,9 @@ def indexes(source, value):
 path = pathlib.Path('2020')
 csa_files = path.glob('**/*.csa')
 
+board = shogi.Board()
 skip_rate = 3800
-sfen = []
+sfen = set(board.sfen())
 
 for csa_file in csa_files:
     print(csa_file)
@@ -82,14 +83,14 @@ for csa_file in csa_files:
             continue
 
         # sfen出力
-        board = shogi.Board()
+        board.reset()
         for data in black_move_data.itertuples():
             # 評価値1000より大きい場合は、それ以降の指し手を記録しない。
             if data.value > 1000:
                 break
 
             board.push_usi(data.move)
-            sfen.append(board.sfen())
+            sfen.add(board.sfen())
             board.push_usi(move_data['move'][data.Index + 1])
 
     # 後手勝利
@@ -109,7 +110,7 @@ for csa_file in csa_files:
             continue
 
         # sfen出力
-        board = shogi.Board()
+        board.reset()
         for data in white_move_data.itertuples():
             # 評価値-1000より小さい場合は、それ以降の指し手を記録しない。
             if data.value < -1000:
@@ -117,7 +118,7 @@ for csa_file in csa_files:
 
             board.push_usi(move_data['move'][data.Index - 1])
             board.push_usi(data.move)
-            sfen.append(board.sfen())
+            sfen.add(board.sfen())
 
     # 引き分け
     elif notation['win'] == '-':
@@ -130,7 +131,7 @@ for csa_file in csa_files:
             continue
 
         # sfen出力
-        board = shogi.Board()
+        board.reset()
         for data in move_data.itertuples():
             board.push_usi(data.move)
-            sfen.append(board.sfen())
+            sfen.add(board.sfen())
