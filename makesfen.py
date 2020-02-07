@@ -1,4 +1,5 @@
 from more_itertools import split_before
+from tqdm import tqdm
 import pandas
 import pathlib
 import shogi
@@ -16,9 +17,7 @@ board = shogi.Board()
 skip_rate = 3800
 sfen = set(board.sfen())
 
-for csa_file in csa_files:
-    print(csa_file)
-
+for csa_file in tqdm(csa_files):
     notation = shogi.CSA.Parser.parse_file(csa_file)[0]
     lines = csa_file.read_text().splitlines()
 
