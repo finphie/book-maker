@@ -167,4 +167,4 @@ for csa_file in tqdm(csa_files):
 # ファイル出力
 with output_path.open('w', encoding='utf_8') as f:
     for position, game_ply in tqdm(sfens.items()):
-        f.write(f'{position} {game_ply}\n')
+        f.write(f'sfen {position} {game_ply}\n')
