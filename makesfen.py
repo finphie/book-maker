@@ -33,7 +33,10 @@ board = shogi.Board()
 sfens = dict((split_sfen(board.sfen()),))
 
 for csa_file in tqdm(csa_files):
-    notation = shogi.CSA.Parser.parse_file(csa_file)[0]
+    try:
+        notation = shogi.CSA.Parser.parse_file(csa_file)[0]
+    except ValueError:
+        continue
     lines = csa_file.read_text().splitlines()
 
     # 対局者名
@@ -66,12 +69,17 @@ for csa_file in tqdm(csa_files):
         continue
 
     # 評価値と読み筋の組み合わせを取得
+    # TODO: 読み筋に不正な文字が入る場合があるので対処する
     move_list = list(split_before(lines[rate_index+1:result_index], lambda x: x.startswith('+') or x.startswith('-')))
-    move_list = [x[2].lstrip("'* ").split(' ', 1) if len(x) > 2 else [0, None] for x in move_list]
+    for i in range(len(move_list)):
+        if len(move_list[i]) < 3:
+            move_list[i] = [0, None]
+            continue
+        x = move_list[i][2].lstrip("'* ").split(' ', 1)
+        move_list[i] = [int(x[0]), x[1]] if len(x) != 1 else [int(x[0]), None]
 
     # 指し手と評価値、読み筋の組み合わせを取得
     move_data = pandas.concat([pandas.Series(notation['moves'], name='move'), pandas.DataFrame(move_list, columns=['value', 'pv'])], axis=1)
-    move_data['value'] = move_data['value'].astype(int)
 
     black_move_data = move_data[::2]
     white_move_data = move_data[1::2]
