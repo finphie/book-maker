@@ -1,5 +1,6 @@
 from more_itertools import split_before
 from tqdm import tqdm
+import argparse
 import pandas
 import pathlib
 import shogi
@@ -15,12 +16,20 @@ def split_sfen(source):
     return position, int(game_ply)
 
 
-path = pathlib.Path('2020')
-csa_files = path.glob('**/*.csa')
+parser = argparse.ArgumentParser()
+
+parser.add_argument('input', help='csaファイルのディレクトリ')
+parser.add_argument('rate', type=int, choices=range(1, 10000), help='出力対象とする最低レーティング', metavar='rate')
+parser.add_argument('max_value', type=int, choices=range(300, 100000), help='出力対象とする手番側から見た最大評価値', metavar='max value')
+parser.add_argument('-o', '--output', default='book.sfen', help='sfenの出力先')
+
+args = parser.parse_args()
+csa_files = pathlib.Path(args.input).glob('**/*.csa')
+skip_rate = args.rate
+max_value = args.max_value
+output_path = pathlib.Path(args.output)
 
 board = shogi.Board()
-skip_rate = 3800
-
 sfens = dict((split_sfen(board.sfen()),))
 
 for csa_file in tqdm(csa_files):
@@ -91,7 +100,7 @@ for csa_file in tqdm(csa_files):
         board.reset()
         for data in black_move_data.itertuples():
             # 評価値1000より大きい場合は、それ以降の指し手を記録しない。
-            if data.value > 1000:
+            if data.value > max_value:
                 break
 
             board.push_usi(data.move)
@@ -120,7 +129,7 @@ for csa_file in tqdm(csa_files):
         board.reset()
         for data in white_move_data.itertuples():
             # 評価値-1000より小さい場合は、それ以降の指し手を記録しない。
-            if data.value < -1000:
+            if data.value < -max_value:
                 break
 
             board.push_usi(move_data['move'][data.Index - 1])
@@ -148,6 +157,6 @@ for csa_file in tqdm(csa_files):
                 sfens[position] = game_ply
 
 # ファイル出力
-with pathlib.Path('book.sfen').open('w', encoding='utf_8') as f:
+with output_path.open('w', encoding='utf_8') as f:
     for position, game_ply in tqdm(sfens.items()):
         f.write(f'{position} {game_ply}\n')
