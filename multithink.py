@@ -5,12 +5,12 @@ import time
 from collections import deque
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import psutil
 from rx.subject import Subject
 
-from Ayane.source.shogi.Ayane import UsiEngine, UsiThinkPV
+from Ayane.source.shogi.Ayane import UsiEngine, UsiThinkResult
 
 
 @dataclass
@@ -119,7 +119,7 @@ class EngineOption:
 
 
 class MultiThink:
-    def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None):
+    def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None):
         if start_moves < 1:
             raise ValueError(f'思考対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
@@ -146,6 +146,8 @@ class MultiThink:
         self.subject = Subject()
         self.threads: List[threading.Thread] = [None for _ in range(self.parallel_count)]
         self.event = threading.Event()
+        default_output_callback: Callable[[UsiThinkResult], None] = lambda x: print(x.to_string())
+        self.output_callback = default_output_callback if output_callback is None else output_callback
 
     def __enter__(self):
         return self
@@ -173,7 +175,7 @@ class MultiThink:
             raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
 
         self.__set_go_command_option(byoyomi, depth, nodes)
-        self.subject.subscribe(self.write_book)
+        self.subject.subscribe(self.output_callback)
 
         for i, engine in enumerate(self.engines):
             if not engine.is_connected():
@@ -202,10 +204,6 @@ class MultiThink:
     def wait(self):
         while not self.event.is_set():
             time.sleep(1)
-
-    def write_book(self, pvs: List[UsiThinkPV]):
-        for i, pv in enumerate(pvs):
-            print(f'{i} {pv.to_string()}')
 
     def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None):
         if byoyomi is not None and byoyomi > 0:
@@ -240,7 +238,7 @@ class MultiThink:
             if engine.think_result.bestmove is None:
                 continue
 
-            self.subject.on_next(engine.think_result.pvs)
+            self.subject.on_next(engine.think_result)
             if not self.__try_analysis(engine):
                 break
 
