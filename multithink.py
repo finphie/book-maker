@@ -168,7 +168,10 @@ class MultiThink:
             engine.set_engine_options(engine_options)
             engine.connect(str(engine_path))
 
-    def start(self, byoyomi: int = None, depth: int = None, nodes: int = None):
+    def start(self, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None):
+        if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
+            raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
+
         self.__set_go_command_option(byoyomi, depth, nodes)
         self.subject.subscribe(self.write_book)
 
@@ -249,7 +252,6 @@ if __name__ == '__main__':
     parser.add_argument('engine_path', help='やねうら王のパス')
     parser.add_argument('sfen_path', help='sfenのパス')
     parser.add_argument('eval_dir', help='評価関数のパス')
-    parser.add_argument('depth', type=int, help='探索深さ')
     parser.add_argument('--book_path', default='user_book1.db', help='定跡ファイル')
     parser.add_argument('--start_moves', type=int, default=1, help='思考対象局面とする最小手数')
     parser.add_argument('--end_moves', type=int, default=1000, help='思考対象とする最大手数')
@@ -258,6 +260,11 @@ if __name__ == '__main__':
     parser.add_argument('--multi_pv', type=int, default=1, help='候補手の数')
     parser.add_argument('--contempt', type=int, default=2, help='引き分けを受け入れるスコア')
     parser.add_argument('--contempt_from_black', action='store_true', help='Contemptを先手番から見た値とします。')
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--byoyomi', type=int, help='秒読み')
+    group.add_argument('--depth', type=int, help='探索深さ')
+    group.add_argument('--nodes', type=int, help='ノード数')
 
     args = parser.parse_args()
     sfens = Path(args.sfen_path).read_text().splitlines()
@@ -274,5 +281,5 @@ if __name__ == '__main__':
         )
         think.init_engine(args.engine_path)
 
-        think.start(depth=args.depth)
+        think.start(byoyomi=args.byoyomi, depth=args.depth, nodes=args.nodes)
         think.wait()
