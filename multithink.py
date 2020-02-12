@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import signal
 import threading
@@ -28,7 +30,7 @@ class EngineOption:
     contempt: int = 2
     contempt_from_black: bool = False
 
-    def __post_init__(self, book_path: Optional[Path]):
+    def __post_init__(self, book_path: Optional[Path]) -> None:
         EngineOption.register_property()
 
         if book_path is not None:
@@ -36,26 +38,26 @@ class EngineOption:
             self.book_dir = str(book_path.parent)
 
     @classmethod
-    def register_property(cls):
+    def register_property(cls) -> None:
         if hasattr(cls, 'hash_'):
             return
 
-        cls.hash_ = property(cls.__get_hash, cls.__set_hash)
-        cls.threads = property(cls.__get_threads, cls.__set_threads)
-        cls.network_delay = property(cls.__get_network_delay, cls.__set_network_delay)
-        cls.network_delay2 = property(cls.__get_network_delay2, cls.__set_network_delay2)
-        cls.eval_share = property(cls.__get_eval_share, cls.__set_eval_share)
-        cls.multi_pv = property(cls.__get_multi_pv, cls.__set_multi_pv)
-        cls.contempt = property(cls.__get_contempt, cls.__set_contempt)
-        cls.contempt_from_black = property(cls.__get_contempt_from_black, cls.__set_contempt_from_black)
+        cls.hash_ = property(cls.__get_hash, cls.__set_hash) # type: ignore # noqa: E261
+        cls.threads = property(cls.__get_threads, cls.__set_threads) # type: ignore # noqa: E261
+        cls.network_delay = property(cls.__get_network_delay, cls.__set_network_delay)# type: ignore # noqa: E261
+        cls.network_delay2 = property(cls.__get_network_delay2, cls.__set_network_delay2)# type: ignore # noqa: E261
+        cls.eval_share = property(cls.__get_eval_share, cls.__set_eval_share) # type: ignore # noqa: E261
+        cls.multi_pv = property(cls.__get_multi_pv, cls.__set_multi_pv) # type: ignore # noqa: E261
+        cls.contempt = property(cls.__get_contempt, cls.__set_contempt) # type: ignore # noqa: E261
+        cls.contempt_from_black = property(cls.__get_contempt_from_black, cls.__set_contempt_from_black) # type: ignore # noqa: E261
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return asdict(self, dict_factory=lambda x: {key.replace('_', ''): str(value).lower() for key, value in x})
 
     def __get_hash(self) -> int:
         return self._hash
 
-    def __set_hash(self, value: int):
+    def __set_hash(self, value: int) -> None:
         if value < 1:
             raise ValueError(f'置換表は1MB以上を指定してください。: {value}')
         if value > psutil.virtual_memory().available:
@@ -66,7 +68,7 @@ class EngineOption:
     def __get_threads(self) -> int:
         return self._threads
 
-    def __set_threads(self, value: int):
+    def __set_threads(self, value: int) -> None:
         if value < 1:
             raise ValueError(f'スレッド数は1以上の数値を指定してください。: {value}')
 
@@ -75,7 +77,7 @@ class EngineOption:
     def __get_network_delay(self) -> int:
         return self._network_delay
 
-    def __set_network_delay(self, value: int):
+    def __set_network_delay(self, value: int) -> None:
         if value < 0:
             raise ValueError(f'通信の平均遅延時間には0以上の数値を指定してください。: {value}')
 
@@ -84,7 +86,7 @@ class EngineOption:
     def __get_network_delay2(self) -> int:
         return self._network_delay2
 
-    def __set_network_delay2(self, value: int):
+    def __set_network_delay2(self, value: int) -> None:
         if value < 0:
             raise ValueError(f'通信の最大遅延時間には0以上の数値を指定してください。: {value}')
 
@@ -93,13 +95,13 @@ class EngineOption:
     def __get_eval_share(self) -> int:
         return self._eval_share
 
-    def __set_eval_share(self, value: bool):
+    def __set_eval_share(self, value: bool) -> None:
         self._eval_share = value
 
     def __get_multi_pv(self) -> int:
         return self._multi_pv
 
-    def __set_multi_pv(self, value: int):
+    def __set_multi_pv(self, value: int) -> None:
         if value < 1:
             raise ValueError(f'候補手の数には1以上の数値を指定してください。: {value}')
 
@@ -108,18 +110,18 @@ class EngineOption:
     def __get_contempt(self) -> int:
         return self._contempt
 
-    def __set_contempt(self, value: int):
+    def __set_contempt(self, value: int) -> None:
         self._contempt = value
 
     def __get_contempt_from_black(self) -> bool:
         return self._contempt_from_black
 
-    def __set_contempt_from_black(self, value: bool):
+    def __set_contempt_from_black(self, value: bool) -> None:
         self._contempt_from_black = value
 
 
 class MultiThink:
-    def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None):
+    def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None) -> None:
         if start_moves < 1:
             raise ValueError(f'思考対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
@@ -144,25 +146,25 @@ class MultiThink:
         self.go_command_option = ''
         self.engines = [UsiEngine() for _ in range(self.parallel_count)]
         self.subject = Subject()
-        self.threads: List[threading.Thread] = [None for _ in range(self.parallel_count)]
+        self.threads: List[Optional[threading.Thread]] = [None for _ in range(self.parallel_count)]
         self.event = threading.Event()
         default_output_callback: Callable[[UsiThinkResult], None] = lambda x: print(x.to_string())
         self.output_callback = default_output_callback if output_callback is None else output_callback
 
-    def __enter__(self):
+    def __enter__(self) -> MultiThink:
         return self
 
-    def __exit__(self, ex_type, ex_value, trace):
+    def __exit__(self, ex_type, ex_value, trace) -> None:
         self.stop()
 
-    def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False):
+    def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
         self.engine_options.eval_dir = eval_dir
         self.engine_options.hash_ = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.parallel_count) if hash_size is None else hash_size
         self.engine_options.multi_pv = multi_pv
         self.engine_options.contempt = contempt
         self.engine_options.contempt_from_black = contempt_from_black
 
-    def init_engine(self, engine_path: Path):
+    def init_engine(self, engine_path: Path) -> None:
         engine_options = self.engine_options.to_dict()
         print(engine_options)
 
@@ -170,7 +172,7 @@ class MultiThink:
             engine.set_engine_options(engine_options)
             engine.connect(str(engine_path))
 
-    def start(self, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None):
+    def start(self, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
         if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
             raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
 
@@ -189,7 +191,7 @@ class MultiThink:
                 self.threads[i] = threading.Thread(target=self.__worker, args=(i, ))
                 self.threads[i].start()
 
-    def stop(self):
+    def stop(self) -> None:
         self.event.set()
 
         for i in range(len(self.threads)):
@@ -201,11 +203,11 @@ class MultiThink:
         for engine in self.engines:
             engine.disconnect()
 
-    def wait(self):
+    def wait(self) -> None:
         while not self.event.is_set():
             time.sleep(1)
 
-    def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None):
+    def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None) -> None:
         if byoyomi is not None and byoyomi > 0:
             self.go_command_option = f'btime 0 wtime 0 byoyomi {byoyomi}'
             return
@@ -229,7 +231,7 @@ class MultiThink:
 
         return True
 
-    def __worker(self, engine_number: int):
+    def __worker(self, engine_number: int) -> None:
         engine = self.engines[engine_number]
 
         while not self.event.wait(1):
