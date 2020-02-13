@@ -126,7 +126,7 @@ class EngineOption:
 
 
 class MultiThink:
-    def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None) -> None:
+    def __init__(self, sfens: List[str], book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None) -> None:
         if start_moves < 1:
             raise ValueError(f'解析対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
@@ -278,10 +278,10 @@ if __name__ == '__main__':
     config.dictConfig(json.loads(Path('logconfig.json').read_text()))
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('engine_path', help='やねうら王のパス')
-    parser.add_argument('sfen_path', help='sfenのパス')
+    parser.add_argument('engine_path', type=Path, help='やねうら王のパス')
+    parser.add_argument('sfen_path', type=Path, help='sfenのパス')
     parser.add_argument('eval_dir', help='評価関数のパス')
-    parser.add_argument('--book_path', default='user_book1.db', help='定跡ファイル')
+    parser.add_argument('--book_path', type=Path, help='定跡ファイル')
     parser.add_argument('--start_moves', type=int, default=1, help='解析対象局面とする最小手数')
     parser.add_argument('--end_moves', type=int, default=1000, help='解析対象とする最大手数')
     parser.add_argument('--parallel_count', type=int, help='並列数')
@@ -296,9 +296,17 @@ if __name__ == '__main__':
     group.add_argument('--nodes', type=int, help='ノード数')
 
     args = parser.parse_args()
-    sfens = Path(args.sfen_path).read_text().splitlines()
+    engine_path: Path = args.engine_path
+    sfen_path: Path = args.sfen_path
 
-    with MultiThink(sfens, Path(args.book_path), args.start_moves, args.end_moves, args.parallel_count) as think:
+    if not engine_path.exists():
+        raise FileExistsError(f'ファイルが存在しません。: {engine_path}')
+    if not sfen_path.exists():
+        raise FileExistsError(f'ファイルが存在しません。: {sfen_path}')
+
+    sfens = sfen_path.read_text().splitlines()
+
+    with MultiThink(sfens, args.book_path, args.start_moves, args.end_moves, args.parallel_count) as think:
         signal.signal(signal.SIGINT, lambda number, frame: think.stop())
 
         think.set_engine_options(
@@ -308,7 +316,7 @@ if __name__ == '__main__':
             contempt=args.contempt,
             contempt_from_black=args.contempt_from_black
         )
-        think.init_engine(Path(args.engine_path))
+        think.init_engine(engine_path)
 
         think.start(byoyomi=args.byoyomi, depth=args.depth, nodes=args.nodes)
         think.wait()
