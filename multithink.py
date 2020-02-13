@@ -127,29 +127,29 @@ class MultiThink:
         if start_moves > end_moves:
             raise ValueError(f'思考対象とする最大手数には、最小手数以上の数値を指定してください。{end_moves}')
         if parallel_count is None:
-            self.parallel_count = psutil.cpu_count()
+            self.__parallel_count = psutil.cpu_count()
         elif parallel_count >= 1:
-            self.parallel_count = parallel_count
+            self.__parallel_count = parallel_count
         else:
             raise ValueError(f'並列数には1以上の数値を指定してください。: {parallel_count}')
 
         # 思考対象となるsfenのみを抽出
-        self.sfens = deque()
+        self.__sfens = deque()
         for sfen in sfens:
             if start_moves > int(sfen.rsplit(' ', 1)[1]) > end_moves:
                 continue
-            self.sfens.append(sfen)
+            self.__sfens.append(sfen)
 
-        self.engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
-        print(self.engine_options.to_dict())
+        self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
+        print(self.__engine_options.to_dict())
 
-        self.go_command_option = ''
-        self.engines = [UsiEngine() for _ in range(self.parallel_count)]
-        self.subject = Subject()
-        self.threads: List[Optional[threading.Thread]] = [None for _ in range(self.parallel_count)]
-        self.event = threading.Event()
+        self.__go_command_option = ''
+        self.__engines = [UsiEngine() for _ in range(self.__parallel_count)]
+        self.__subject = Subject()
+        self.__threads: List[Optional[threading.Thread]] = [None for _ in range(self.__parallel_count)]
+        self.__event = threading.Event()
         default_output_callback: Callable[[UsiThinkResult], None] = lambda x: print(x.to_string())
-        self.output_callback = default_output_callback if output_callback is None else output_callback
+        self.__output_callback = default_output_callback if output_callback is None else output_callback
 
     def __enter__(self) -> MultiThink:
         return self
@@ -158,17 +158,17 @@ class MultiThink:
         self.stop()
 
     def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
-        self.engine_options.eval_dir = eval_dir
-        self.engine_options.hash_ = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.parallel_count) if hash_size is None else hash_size
-        self.engine_options.multi_pv = multi_pv
-        self.engine_options.contempt = contempt
-        self.engine_options.contempt_from_black = contempt_from_black
+        self.__engine_options.eval_dir = eval_dir
+        self.__engine_options.hash_ = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
+        self.__engine_options.multi_pv = multi_pv
+        self.__engine_options.contempt = contempt
+        self.__engine_options.contempt_from_black = contempt_from_black
 
     def init_engine(self, engine_path: Path) -> None:
-        engine_options = self.engine_options.to_dict()
+        engine_options = self.__engine_options.to_dict()
         print(engine_options)
 
-        for engine in self.engines:
+        for engine in self.__engines:
             engine.set_engine_options(engine_options)
             engine.connect(str(engine_path))
 
@@ -177,74 +177,74 @@ class MultiThink:
             raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
 
         self.__set_go_command_option(byoyomi, depth, nodes)
-        self.subject.subscribe(self.output_callback)
+        self.__subject.subscribe(self.__output_callback)
 
-        for i, engine in enumerate(self.engines):
+        for i, engine in enumerate(self.__engines):
             if not engine.is_connected():
                 raise ValueError(f'engine{i}が接続されていません。')
 
             if not self.__try_analysis(engine):
-                self.subject.on_completed()
+                self.__subject.on_completed()
                 break
 
-            if self.threads[i] is None:
-                self.threads[i] = threading.Thread(target=self.__worker, args=(i, ))
-                self.threads[i].start()
+            if self.__threads[i] is None:
+                self.__threads[i] = threading.Thread(target=self.__worker, args=(i, ))
+                self.__threads[i].start()
 
     def stop(self) -> None:
-        self.event.set()
+        self.__event.set()
 
-        for i in range(len(self.threads)):
-            if self.threads[i] is None:
+        for i in range(len(self.__threads)):
+            if self.__threads[i] is None:
                 continue
-            self.threads[i].join()
-            self.threads[i] = None
+            self.__threads[i].join()
+            self.__threads[i] = None
 
-        for engine in self.engines:
+        for engine in self.__engines:
             engine.disconnect()
 
     def wait(self) -> None:
-        while not self.event.is_set():
+        while not self.__event.is_set():
             time.sleep(1)
 
     def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None) -> None:
         if byoyomi is not None and byoyomi > 0:
-            self.go_command_option = f'btime 0 wtime 0 byoyomi {byoyomi}'
+            self.__go_command_option = f'btime 0 wtime 0 byoyomi {byoyomi}'
             return
         if depth is not None and depth > 0:
-            self.go_command_option = f'depth {depth}'
+            self.__go_command_option = f'depth {depth}'
             return
         if nodes is not None and nodes > 0:
-            self.go_command_option = f'nodes {nodes}'
+            self.__go_command_option = f'nodes {nodes}'
             return
 
         raise ValueError(f'goコマンドの形式が不正です。: {byoyomi = }, {depth = }, {nodes = }')
 
     def __try_analysis(self, engine: UsiEngine) -> bool:
-        if not self.sfens:
+        if not self.__sfens:
             return False
 
         engine.send_command('usinewgame')
-        sfen = self.sfens.popleft()
+        sfen = self.__sfens.popleft()
         engine.usi_position(sfen)
-        engine.usi_go(self.go_command_option)
+        engine.usi_go(self.__go_command_option)
 
         return True
 
     def __worker(self, engine_number: int) -> None:
-        engine = self.engines[engine_number]
+        engine = self.__engines[engine_number]
 
-        while not self.event.wait(1):
+        while not self.__event.wait(1):
             print(f'worker{engine_number}')
 
             if engine.think_result.bestmove is None:
                 continue
 
-            self.subject.on_next(engine.think_result)
+            self.__subject.on_next(engine.think_result)
             if not self.__try_analysis(engine):
                 break
 
-        self.subject.on_completed()
+        self.__subject.on_completed()
 
 
 if __name__ == '__main__':
