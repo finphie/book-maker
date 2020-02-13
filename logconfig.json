@@ -1,0 +1,23 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "consoleFormatter": {
+            "format": "%(asctime)s|%(levelname)s|%(thread)d|%(message)s"
+        }
+    },
+    "handlers": {
+        "consoleHandler": {
+            "class": "logging.StreamHandler",
+            "formatter": "consoleFormatter",
+            "level": "INFO"
+        }
+    },
+    "loggers": {
+        "multi_think": {
+            "handlers": ["consoleHandler"],
+            "level": "INFO",
+            "propagate": false
+        }
+    }
+}

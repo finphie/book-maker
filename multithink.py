@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import threading
 import time
 from collections import deque
 from dataclasses import InitVar, asdict, dataclass, field
+from logging import config, getLogger
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import psutil
 from rx.subject import Subject
 
 from Ayane.source.shogi.Ayane import UsiEngine, UsiThinkResult
+
+logger = getLogger(__name__)
 
 
 @dataclass
@@ -51,7 +55,7 @@ class EngineOption:
         cls.contempt = property(cls.__get_contempt, cls.__set_contempt) # type: ignore # noqa: E261
         cls.contempt_from_black = property(cls.__get_contempt_from_black, cls.__set_contempt_from_black) # type: ignore # noqa: E261
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict[str, str]:
         return asdict(self, dict_factory=lambda x: {key.replace('_', ''): str(value).lower() for key, value in x})
 
     def __get_hash(self) -> int:
@@ -123,9 +127,9 @@ class EngineOption:
 class MultiThink:
     def __init__(self, sfens: list, book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None) -> None:
         if start_moves < 1:
-            raise ValueError(f'思考対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
+            raise ValueError(f'解析対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
-            raise ValueError(f'思考対象とする最大手数には、最小手数以上の数値を指定してください。{end_moves}')
+            raise ValueError(f'解析対象とする最大手数には、最小手数以上の数値を指定してください。{end_moves}')
         if parallel_count is None:
             self.__parallel_count = psutil.cpu_count()
         elif parallel_count >= 1:
@@ -133,23 +137,24 @@ class MultiThink:
         else:
             raise ValueError(f'並列数には1以上の数値を指定してください。: {parallel_count}')
 
-        # 思考対象となるsfenのみを抽出
+        # 解析対象となるsfenのみを抽出
         self.__sfens = deque()
         for sfen in sfens:
             if start_moves > int(sfen.rsplit(' ', 1)[1]) > end_moves:
                 continue
             self.__sfens.append(sfen)
 
-        self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
-        print(self.__engine_options.to_dict())
+        logger.info(f'局面数: {len(sfens)}')
+        logger.info(f'解析対象局面数: {len(self.__sfens)}')
+        logger.info(f'並列数: {self.__parallel_count}')
 
+        self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
         self.__go_command_option = ''
         self.__engines = [UsiEngine() for _ in range(self.__parallel_count)]
         self.__subject = Subject()
         self.__threads: List[Optional[threading.Thread]] = [None for _ in range(self.__parallel_count)]
         self.__event = threading.Event()
-        default_output_callback: Callable[[UsiThinkResult], None] = lambda x: print(x.to_string())
-        self.__output_callback = default_output_callback if output_callback is None else output_callback
+        self.__output_callback = self.__output if output_callback is None else output_callback
 
     def __enter__(self) -> MultiThink:
         return self
@@ -164,9 +169,16 @@ class MultiThink:
         self.__engine_options.contempt = contempt
         self.__engine_options.contempt_from_black = contempt_from_black
 
+        logger.info('エンジン設定を更新')
+        for key, value in self.__engine_options.to_dict().items():
+            logger.info(f'- {key}: {value}')
+
     def init_engine(self, engine_path: Path) -> None:
+        if not engine_path.exists():
+            raise FileNotFoundError(f'ファイルが存在しません。: {engine_path}')
+
+        logger.info(f'エンジンのパス: {engine_path}')
         engine_options = self.__engine_options.to_dict()
-        print(engine_options)
 
         for engine in self.__engines:
             engine.set_engine_options(engine_options)
@@ -186,6 +198,7 @@ class MultiThink:
             if not self.__try_analysis(engine):
                 self.__subject.on_completed()
                 break
+            logger.info(f'worker{i}: 解析開始')
 
             if self.__threads[i] is None:
                 self.__threads[i] = threading.Thread(target=self.__worker, args=(i, ))
@@ -208,20 +221,26 @@ class MultiThink:
             time.sleep(1)
 
     def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None) -> None:
+        logger.info('goコマンド設定を更新')
+
         if byoyomi is not None and byoyomi > 0:
             self.__go_command_option = f'btime 0 wtime 0 byoyomi {byoyomi}'
+            logger.info(f'- 秒読み: {byoyomi}')
             return
         if depth is not None and depth > 0:
             self.__go_command_option = f'depth {depth}'
+            logger.info(f'- 探索深さ: {depth}')
             return
         if nodes is not None and nodes > 0:
             self.__go_command_option = f'nodes {nodes}'
+            logger.info(f'- ノード数: {nodes}')
             return
 
         raise ValueError(f'goコマンドの形式が不正です。: {byoyomi = }, {depth = }, {nodes = }')
 
     def __try_analysis(self, engine: UsiEngine) -> bool:
         if not self.__sfens:
+            logger.info('全対象局面の解析完了')
             return False
 
         engine.send_command('usinewgame')
@@ -232,29 +251,38 @@ class MultiThink:
         return True
 
     def __worker(self, engine_number: int) -> None:
+        worker_name = f'worker{engine_number}: '
+        logger.info(worker_name + '開始')
         engine = self.__engines[engine_number]
 
         while not self.__event.wait(1):
-            print(f'worker{engine_number}')
-
             if engine.think_result.bestmove is None:
                 continue
 
+            logger.info(worker_name + '解析完了')
             self.__subject.on_next(engine.think_result)
             if not self.__try_analysis(engine):
                 break
+            logger.info(worker_name + '解析開始')
 
         self.__subject.on_completed()
+        logger.info(worker_name + '終了')
+
+    def __output(self, result: UsiThinkResult) -> None:
+        logger.info(result.to_string().replace('\n', ','))
 
 
 if __name__ == '__main__':
+    logger = getLogger('multi_think')
+    config.dictConfig(json.loads(Path('logconfig.json').read_text()))
+
     parser = argparse.ArgumentParser()
     parser.add_argument('engine_path', help='やねうら王のパス')
     parser.add_argument('sfen_path', help='sfenのパス')
     parser.add_argument('eval_dir', help='評価関数のパス')
     parser.add_argument('--book_path', default='user_book1.db', help='定跡ファイル')
-    parser.add_argument('--start_moves', type=int, default=1, help='思考対象局面とする最小手数')
-    parser.add_argument('--end_moves', type=int, default=1000, help='思考対象とする最大手数')
+    parser.add_argument('--start_moves', type=int, default=1, help='解析対象局面とする最小手数')
+    parser.add_argument('--end_moves', type=int, default=1000, help='解析対象とする最大手数')
     parser.add_argument('--parallel_count', type=int, help='並列数')
     parser.add_argument('--hash', type=int, help='置換表のサイズ')
     parser.add_argument('--multi_pv', type=int, default=1, help='候補手の数')
@@ -279,7 +307,7 @@ if __name__ == '__main__':
             contempt=args.contempt,
             contempt_from_black=args.contempt_from_black
         )
-        think.init_engine(args.engine_path)
+        think.init_engine(Path(args.engine_path))
 
         think.start(byoyomi=args.byoyomi, depth=args.depth, nodes=args.nodes)
         think.wait()
