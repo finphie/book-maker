@@ -9,7 +9,8 @@ from collections import deque
 from dataclasses import InitVar, asdict, dataclass, field
 from logging import config, getLogger
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from types import TracebackType
+from typing import Callable, Dict, List, Optional, Type
 
 import psutil
 from rx.subject import Subject
@@ -159,7 +160,7 @@ class MultiThink:
     def __enter__(self) -> MultiThink:
         return self
 
-    def __exit__(self, ex_type, ex_value, trace) -> None:
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> Optional[bool]:
         self.stop()
 
     def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
