@@ -25,7 +25,7 @@ class EngineOption:
     book_path: InitVar[Optional[Path]] = None
     book_file: str = field(default='no_book', init=False)
     book_dir: str = field(default='book', init=False)
-    eval_dir: str = 'eval'
+    eval_dir: Path = Path('eval')
     network_delay: int = 0
     network_delay2: int = 0
     eval_share: bool = False
@@ -161,7 +161,7 @@ class MultiThink:
     def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> Optional[bool]:
         self.dispose()
 
-    def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
+    def set_engine_options(self, eval_dir: Path = Path('eval'), hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
         self.__engine_options.eval_dir = eval_dir
         self.__engine_options.hash_ = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
         self.__engine_options.multi_pv = multi_pv
@@ -280,7 +280,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('engine_path', type=Path, help='やねうら王のパス')
     parser.add_argument('sfen_path', type=Path, help='sfenのパス')
-    parser.add_argument('eval_dir', help='評価関数のパス')
+    parser.add_argument('eval_dir', type=Path, help='評価関数のパス')
     parser.add_argument('--book_path', type=Path, help='定跡ファイル')
     parser.add_argument('--start_moves', type=int, default=1, help='解析対象局面とする最小手数')
     parser.add_argument('--end_moves', type=int, default=1000, help='解析対象とする最大手数')
