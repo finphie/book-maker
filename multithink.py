@@ -139,7 +139,7 @@ class MultiThink:
         # 解析対象となるsfenのみを抽出
         self.__sfens = deque()
         for sfen in sfens:
-            if start_moves > int(sfen.rsplit(' ', 1)[1]) > end_moves:
+            if not start_moves <= int(sfen.rsplit(' ', 1)[1]) <= end_moves:
                 continue
             self.__sfens.append(sfen)
 
