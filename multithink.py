@@ -143,6 +143,9 @@ class MultiThink:
                 continue
             self.__sfens.append(sfen)
 
+        # 局面数が並列数よりも少ない場合、並列数を局面数に合わせる。
+        self.__parallel_count = min(self.__parallel_count, len(self.__sfens))
+
         logger.info(f'局面数: {len(sfens)}')
         logger.info(f'解析対象局面数: {len(self.__sfens)}')
         logger.info(f'並列数: {self.__parallel_count}')
