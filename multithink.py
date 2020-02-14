@@ -136,7 +136,7 @@ class MultiThink:
         else:
             raise ValueError(f'並列数には1以上の数値を指定してください。: {parallel_count}')
 
-        # 解析対象となるsfenのみを抽出
+        # 解析対象となる局面のみを抽出
         self.__sfens = deque()
         for sfen in sfens:
             if not start_moves <= int(sfen.rsplit(' ', 1)[1]) <= end_moves:
@@ -214,7 +214,7 @@ class MultiThink:
                 self.__output_callback(engine.think_result)
 
                 # 局面の解析を開始
-                # 解析対象のsfenがない場合は、エンジンを切断する。
+                # 解析対象の局面がない場合は、エンジンを切断する。
                 if not self.__try_analysis(engine):
                     engine.disconnect()
                     continue
