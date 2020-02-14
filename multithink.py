@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
-import threading
 import time
 from collections import deque
 from dataclasses import InitVar, asdict, dataclass, field
@@ -12,10 +10,10 @@ from pathlib import Path
 from types import TracebackType
 from typing import Callable, Dict, List, Optional, Type
 
+import blessed
 import psutil
-from rx.subject import Subject
 
-from Ayane.source.shogi.Ayane import UsiEngine, UsiThinkResult
+from Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
 
 logger = getLogger(__name__)
 
@@ -49,8 +47,8 @@ class EngineOption:
 
         cls.hash_ = property(cls.__get_hash, cls.__set_hash) # type: ignore # noqa: E261
         cls.threads = property(cls.__get_threads, cls.__set_threads) # type: ignore # noqa: E261
-        cls.network_delay = property(cls.__get_network_delay, cls.__set_network_delay)# type: ignore # noqa: E261
-        cls.network_delay2 = property(cls.__get_network_delay2, cls.__set_network_delay2)# type: ignore # noqa: E261
+        cls.network_delay = property(cls.__get_network_delay, cls.__set_network_delay) # type: ignore # noqa: E261
+        cls.network_delay2 = property(cls.__get_network_delay2, cls.__set_network_delay2) # type: ignore # noqa: E261
         cls.eval_share = property(cls.__get_eval_share, cls.__set_eval_share) # type: ignore # noqa: E261
         cls.multi_pv = property(cls.__get_multi_pv, cls.__set_multi_pv) # type: ignore # noqa: E261
         cls.contempt = property(cls.__get_contempt, cls.__set_contempt) # type: ignore # noqa: E261
@@ -126,7 +124,7 @@ class EngineOption:
 
 
 class MultiThink:
-    def __init__(self, sfens: List[str], book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[UsiThinkResult], None]] = None) -> None:
+    def __init__(self, sfens: List[str], book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[Optional[UsiThinkResult]], None]] = None) -> None:
         if start_moves < 1:
             raise ValueError(f'解析対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
@@ -152,16 +150,13 @@ class MultiThink:
         self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
         self.__go_command_option = ''
         self.__engines = [UsiEngine() for _ in range(self.__parallel_count)]
-        self.__subject = Subject()
-        self.__threads: List[Optional[threading.Thread]] = [None for _ in range(self.__parallel_count)]
-        self.__event = threading.Event()
         self.__output_callback = self.__output if output_callback is None else output_callback
 
     def __enter__(self) -> MultiThink:
         return self
 
     def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> Optional[bool]:
-        self.stop()
+        self.dispose()
 
     def set_engine_options(self, eval_dir: str = 'eval', hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
         self.__engine_options.eval_dir = eval_dir
@@ -185,43 +180,59 @@ class MultiThink:
             engine.set_engine_options(engine_options)
             engine.connect(str(engine_path))
 
-    def start(self, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
-        if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
-            raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
-
-        self.__set_go_command_option(byoyomi, depth, nodes)
-        self.__subject.subscribe(self.__output_callback)
+    def run(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None, cancel_callback: Callable[[], bool] = None) -> None:
+        self.__set_go_command_option(byoyomi=byoyomi, depth=depth, nodes=nodes)
 
         for i, engine in enumerate(self.__engines):
             if not engine.is_connected():
                 raise ValueError(f'engine{i}が接続されていません。')
 
+            # 局面の解析を開始
             if not self.__try_analysis(engine):
-                self.__subject.on_completed()
                 break
-            logger.info(f'worker{i}: 解析開始')
 
-            if self.__threads[i] is None:
-                self.__threads[i] = threading.Thread(target=self.__worker, args=(i, ))
-                self.__threads[i].start()
+            logger.info(f'engine{i}: 解析開始')
 
-    def stop(self) -> None:
-        self.__event.set()
+        while True:
+            # 解析を停止するかどうか
+            if cancel_callback is not None and cancel_callback():
+                self.dispose()
+                logger.info('解析停止')
+                return
 
-        for i in range(len(self.__threads)):
-            if self.__threads[i] is None:
-                continue
-            self.__threads[i].join()
-            self.__threads[i] = None
+            for i, engine in enumerate(self.__engines):
+                # bestmoveが返ってきているか
+                if engine.think_result.bestmove is None:
+                    continue
 
+                logger.info(f'engine{i}: 解析完了')
+
+                # 出力
+                self.__output_callback(engine.think_result)
+
+                # 局面の解析を開始
+                # 解析対象のsfenがない場合は、エンジンを切断する。
+                if not self.__try_analysis(engine):
+                    engine.disconnect()
+                    continue
+
+                logger.info(f'engine{i}: 解析開始')
+
+            # 全対象局面の解析完了
+            if all(x.engine_state == UsiEngineState.Disconnected for x in self.__engines):
+                logger.info('解析完了')
+                return
+
+            time.sleep(1)
+
+    def dispose(self) -> None:
         for engine in self.__engines:
             engine.disconnect()
 
-    def wait(self) -> None:
-        while not self.__event.is_set():
-            time.sleep(1)
+    def __set_go_command_option(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
+        if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
+            raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
 
-    def __set_go_command_option(self, byoyomi: int = None, depth: int = None, nodes: int = None) -> None:
         logger.info('goコマンド設定を更新')
 
         if byoyomi is not None and byoyomi > 0:
@@ -241,7 +252,6 @@ class MultiThink:
 
     def __try_analysis(self, engine: UsiEngine) -> bool:
         if not self.__sfens:
-            logger.info('全対象局面の解析完了')
             return False
 
         engine.send_command('usinewgame')
@@ -251,29 +261,16 @@ class MultiThink:
 
         return True
 
-    def __worker(self, engine_number: int) -> None:
-        worker_name = f'worker{engine_number}: '
-        logger.info(worker_name + '開始')
-        engine = self.__engines[engine_number]
+    def __output(self, result: Optional[UsiThinkResult]) -> None:
+        if result is None:
+            return
 
-        while not self.__event.wait(1):
-            if engine.think_result.bestmove is None:
-                continue
-
-            logger.info(worker_name + '解析完了')
-            self.__subject.on_next(engine.think_result)
-            if not self.__try_analysis(engine):
-                break
-            logger.info(worker_name + '解析開始')
-
-        self.__subject.on_completed()
-        logger.info(worker_name + '終了')
-
-    def __output(self, result: UsiThinkResult) -> None:
         logger.info(result.to_string().replace('\n', ','))
 
 
 if __name__ == '__main__':
+    term = blessed.Terminal()
+
     logger = getLogger('multi_think')
     config.dictConfig(json.loads(Path('logconfig.json').read_text()))
 
@@ -307,8 +304,6 @@ if __name__ == '__main__':
     sfens = sfen_path.read_text().splitlines()
 
     with MultiThink(sfens, args.book_path, args.start_moves, args.end_moves, args.parallel_count) as think:
-        signal.signal(signal.SIGINT, lambda number, frame: think.stop())
-
         think.set_engine_options(
             eval_dir=args.eval_dir,
             hash_size=args.hash,
@@ -318,5 +313,9 @@ if __name__ == '__main__':
         )
         think.init_engine(engine_path)
 
-        think.start(byoyomi=args.byoyomi, depth=args.depth, nodes=args.nodes)
-        think.wait()
+        def cancel() -> bool:
+            value = term.inkey(timeout=0.001)
+            return value and value.is_sequence and value.name == 'KEY_ESCAPE'
+
+        with term.cbreak():
+            think.run(byoyomi=args.byoyomi, depth=args.depth, nodes=args.nodes, cancel_callback=cancel)
