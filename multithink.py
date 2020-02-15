@@ -153,6 +153,7 @@ class MultiThink:
         self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
         self.__go_command_option = ''
         self.__engines = [UsiEngine() for _ in range(self.__parallel_count)]
+        self.__positions = ['' for _ in range(self.__parallel_count)]
         self.__output_callback = self.__output if output_callback is None else output_callback
 
     def __enter__(self) -> MultiThink:
@@ -191,10 +192,11 @@ class MultiThink:
                 raise ValueError(f'engine{i}が接続されていません。')
 
             # 局面の解析を開始
-            if not self.__try_analysis(engine):
+            if not self.__try_analysis(i):
                 break
 
             logger.info(f'engine{i}: 解析開始')
+            logger.info(f'- {self.__positions}')
 
         while True:
             # 解析を停止するかどうか
@@ -215,11 +217,12 @@ class MultiThink:
 
                 # 局面の解析を開始
                 # 解析対象の局面がない場合は、エンジンを切断する。
-                if not self.__try_analysis(engine):
+                if not self.__try_analysis(i):
                     engine.disconnect()
                     continue
 
                 logger.info(f'engine{i}: 解析開始')
+                logger.info(f'- {self.__positions}')
 
             # 全対象局面の解析完了
             if all(x.engine_state == UsiEngineState.Disconnected for x in self.__engines):
@@ -253,13 +256,17 @@ class MultiThink:
 
         raise ValueError(f'goコマンドの形式が不正です。: {byoyomi = }, {depth = }, {nodes = }')
 
-    def __try_analysis(self, engine: UsiEngine) -> bool:
+    def __try_analysis(self, engine_number: int) -> bool:
         if not self.__sfens:
             return False
 
+        if not 0 <= engine_number < len(self.__engines):
+            raise ValueError(f'エンジン番号が正しくありません。: {engine_number}')
+
+        self.__positions = self.__sfens.popleft()
+        engine = self.__engines[engine_number]
         engine.send_command('usinewgame')
-        sfen = self.__sfens.popleft()
-        engine.usi_position(sfen)
+        engine.usi_position(self.__positions)
         engine.usi_go(self.__go_command_option)
 
         return True
@@ -268,7 +275,14 @@ class MultiThink:
         if result is None:
             return
 
-        logger.info(result.to_string().replace('\n', ','))
+        for i, pv in enumerate(result.pvs):
+            logger.info(f'- multipv {i+1} {pv.to_string()}')
+
+        if result.bestmove is not None:
+            logger.info(f'- bestmove {result.bestmove}')
+
+        if result.ponder is not None:
+            logger.info(f'- ponder {result.ponder}')
 
 
 if __name__ == '__main__':
