@@ -125,6 +125,8 @@ class EngineOption:
 
 class MultiThink:
     def __init__(self, sfens: List[str], book_path: Optional[Path] = None, start_moves: int = 1, end_moves: int = 1000, parallel_count: Optional[int] = None, output_callback: Optional[Callable[[Optional[UsiThinkResult]], None]] = None) -> None:
+        if book_path is not None and book_path.exists():
+            raise FileNotFoundError(f'ファイルが存在しません。: {book_path}')
         if start_moves < 1:
             raise ValueError(f'解析対象とする最小手数には、1以上の数値を指定してください。{start_moves}')
         if start_moves > end_moves:
@@ -150,7 +152,7 @@ class MultiThink:
         logger.info(f'解析対象局面数: {len(self.__sfens)}')
         logger.info(f'並列数: {self.__parallel_count}')
 
-        self.__engine_options = EngineOption(threads=1, book_path=book_path, eval_share=True)
+        self.__engine_options = EngineOption(threads=1, eval_share=True)
         self.__go_command_option = ''
         self.__engines = [UsiEngine() for _ in range(self.__parallel_count)]
         self.__positions = ['' for _ in range(self.__parallel_count)]
@@ -314,9 +316,9 @@ if __name__ == '__main__':
     sfen_path: Path = args.sfen_path
 
     if not engine_path.exists():
-        raise FileExistsError(f'ファイルが存在しません。: {engine_path}')
+        raise FileNotFoundError(f'ファイルが存在しません。: {engine_path}')
     if not sfen_path.exists():
-        raise FileExistsError(f'ファイルが存在しません。: {sfen_path}')
+        raise FileNotFoundError(f'ファイルが存在しません。: {sfen_path}')
 
     sfens = sfen_path.read_text().splitlines()
 
