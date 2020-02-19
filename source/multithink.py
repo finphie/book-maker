@@ -49,7 +49,7 @@ class MultiThink:
             logger.info(f'- {key}: {value}')
 
     def init_engine(self, engine_path: Path, parallel_count: Optional[int] = None) -> None:
-        if not engine_path.exists():
+        if not engine_path.is_file():
             raise FileNotFoundError(f'ファイルが存在しません。: {engine_path}')
         if parallel_count is None:
             self.__parallel_count = psutil.cpu_count()
@@ -97,7 +97,7 @@ class MultiThink:
     def set_books(self, book_path: Optional[Path] = None) -> None:
         if book_path is None:
             book_lines = []
-        elif book_path.exists():
+        elif book_path.is_file():
             book_lines = book_path.read_text(encoding='ascii').splitlines()
             if not book_lines[0] == '#YANEURAOU-DB2016 1.00':
                 raise ValueError(f'定跡には、やねうら王定跡フォーマットを利用してください。')

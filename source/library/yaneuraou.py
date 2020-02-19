@@ -82,7 +82,7 @@ class EngineOption:
         if value is None:
             self.option['book_file'] = 'no_book'
             return
-        if not value.exists():
+        if not value.is_file():
             raise FileNotFoundError(f'ファイルが存在しません。: {value}')
 
         self.option['book_dir'] = str(value.parent)
@@ -94,8 +94,8 @@ class EngineOption:
 
     @eval_dir.setter
     def eval_dir(self, value: Path) -> None:
-        if not value.exists():
-            raise FileNotFoundError(f'ファイルが存在しません。: {value}')
+        if not value.is_dir():
+            raise FileNotFoundError(f'ディレクトリが存在しません。: {value}')
 
         self.option['eval_dir'] = str(value)
 
