@@ -1,5 +1,160 @@
-from dataclasses import dataclass
-from typing import List
+from dataclasses import asdict, dataclass, field
+from distutils.util import strtobool
+from pathlib import Path
+from typing import Dict, List, Optional, TypedDict
+
+import psutil
+
+
+class RawEngineOption(TypedDict, total=False):
+    hash_: str
+    threads: str
+    book_dir: str
+    book_file: str
+    eval_dir: str
+    network_delay: str
+    network_delay2: str
+    eval_share: str
+    multi_pv: str
+    contempt: str
+    contempt_from_black: str
+
+
+@dataclass
+class EngineOption:
+    option: RawEngineOption = field(init=False, default_factory=lambda: EngineOption.__get_default())
+
+    @staticmethod
+    def __get_default() -> RawEngineOption:
+        return RawEngineOption(
+            hash_='16',
+            threads='1',
+            book_dir='book',
+            book_file='no_book',
+            eval_dir='eval',
+            network_delay='0',
+            network_delay2='0',
+            eval_share='false',
+            multi_pv='1',
+            contempt='2',
+            contempt_from_black='false'
+        )
+
+    def to_dict(self) -> Dict[str, str]:
+        return asdict(
+            self,
+            dict_factory=lambda x: {key.replace('_', ''): value.lower() for key, value in x[0][1].items()}
+        )
+
+    @property
+    def hash(self) -> int:
+        return int(self.option['hash_'])
+
+    @hash.setter
+    def hash(self, value: int) -> None:
+        if value < 1:
+            raise ValueError(f'置換表は1MB以上を指定してください。: {value}')
+        if value > psutil.virtual_memory().available:
+            raise ValueError(f'置換表には空きメモリ容量未満の数値を指定してください。: {value}')
+
+        self.option['hash_'] = str(value)
+
+    @property
+    def threads(self) -> int:
+        return int(self.option['threads'])
+
+    @threads.setter
+    def threads(self, value: int) -> None:
+        if value < 1:
+            raise ValueError(f'スレッド数は1以上の数値を指定してください。: {value}')
+
+        self.option['threads'] = str(value)
+
+    @property
+    def book_path(self) -> Optional[Path]:
+        if self.option['book_file'] == 'no_book':
+            return None
+
+        return Path(self.option['book_dir']) / Path(self.option['book_file'])
+
+    @book_path.setter
+    def book_path(self, value: Optional[Path]) -> None:
+        if value is None:
+            self.option['book_file'] = 'no_book'
+            return
+        if not value.exists():
+            raise FileNotFoundError(f'ファイルが存在しません。: {value}')
+
+        self.option['book_dir'] = str(value.parent)
+        self.option['book_file'] = value.name
+
+    @property
+    def eval_dir(self) -> Path:
+        return Path(self.option['eval_dir'])
+
+    @eval_dir.setter
+    def eval_dir(self, value: Path) -> None:
+        if not value.exists():
+            raise FileNotFoundError(f'ファイルが存在しません。: {value}')
+
+        self.option['eval_dir'] = str(value)
+
+    @property
+    def network_delay(self) -> int:
+        return int(self.option['network_delay'])
+
+    @network_delay.setter
+    def network_delay(self, value: int) -> None:
+        if value < 0:
+            raise ValueError(f'通信の平均遅延時間には0以上の数値を指定してください。: {value}')
+
+        self.option['network_delay'] = str(value)
+
+    @property
+    def network_delay2(self) -> int:
+        return int(self.option['network_delay2'])
+
+    @network_delay2.setter
+    def network_delay2(self, value: int) -> None:
+        if value < 0:
+            raise ValueError(f'通信の最大遅延時間には0以上の数値を指定してください。: {value}')
+
+        self.option['network_delay2'] = str(value)
+
+    @property
+    def eval_share(self) -> bool:
+        return strtobool(self.option['eval_share'])
+
+    @eval_share.setter
+    def eval_share(self, value: bool) -> None:
+        self.option['eval_share'] = str(value).lower()
+
+    @property
+    def multi_pv(self) -> int:
+        return int(self.option['multi_pv'])
+
+    @multi_pv.setter
+    def multi_pv(self, value: int) -> None:
+        if value < 1:
+            raise ValueError(f'候補手の数には1以上の数値を指定してください。: {value}')
+
+        self.option['multi_pv'] = str(value)
+
+    @property
+    def contempt(self) -> int:
+        return int(self.option['contempt'])
+
+    @contempt.setter
+    def contempt(self, value: int) -> None:
+        self.option['contempt'] = str(value)
+
+    @property
+    def contempt_from_black(self) -> bool:
+        return strtobool(self.option['contempt_from_black'])
+
+    @contempt_from_black.setter
+    def contempt_from_black(self, value: bool) -> None:
+        self.option['contempt_from_black'] = str(value).lower()
 
 
 @dataclass(frozen=True)
@@ -38,8 +193,4 @@ class BookFormatter:
 
     @staticmethod
     def serialize(book: Book) -> List[str]:
-        result = [BookFormatter.__version]
-        for x in book.body:
-            result.append(str(x))
-
-        return result
+        return [str(x) for x in book.body]

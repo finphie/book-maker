@@ -4,7 +4,6 @@ import argparse
 import json
 import time
 from collections import deque
-from dataclasses import InitVar, asdict, dataclass, field
 from logging import config, getLogger
 from pathlib import Path
 from types import TracebackType
@@ -15,114 +14,9 @@ import psutil
 from more_itertools import split_before
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
-from library.yaneuraou import Book, BookFormatter
+from library.yaneuraou import Book, BookFormatter, EngineOption
 
 logger = getLogger(__name__)
-
-
-@dataclass
-class EngineOption:
-    hash_: int = 16
-    threads: int = 1
-    book_path: InitVar[Optional[Path]] = None
-    book_file: str = field(default='no_book', init=False)
-    book_dir: str = field(default='book', init=False)
-    eval_dir: Path = Path('eval')
-    network_delay: int = 0
-    network_delay2: int = 0
-    eval_share: bool = False
-    multi_pv: int = 1
-    contempt: int = 2
-    contempt_from_black: bool = False
-
-    def __post_init__(self, book_path: Optional[Path]) -> None:
-        EngineOption.register_property()
-
-        if book_path is not None:
-            self.book_file = book_path.name
-            self.book_dir = str(book_path.parent)
-
-    @classmethod
-    def register_property(cls) -> None:
-        if hasattr(cls, 'hash_'):
-            return
-
-        cls.hash_ = property(cls.__get_hash, cls.__set_hash) # type: ignore # noqa: E261
-        cls.threads = property(cls.__get_threads, cls.__set_threads) # type: ignore # noqa: E261
-        cls.network_delay = property(cls.__get_network_delay, cls.__set_network_delay) # type: ignore # noqa: E261
-        cls.network_delay2 = property(cls.__get_network_delay2, cls.__set_network_delay2) # type: ignore # noqa: E261
-        cls.eval_share = property(cls.__get_eval_share, cls.__set_eval_share) # type: ignore # noqa: E261
-        cls.multi_pv = property(cls.__get_multi_pv, cls.__set_multi_pv) # type: ignore # noqa: E261
-        cls.contempt = property(cls.__get_contempt, cls.__set_contempt) # type: ignore # noqa: E261
-        cls.contempt_from_black = property(cls.__get_contempt_from_black, cls.__set_contempt_from_black) # type: ignore # noqa: E261
-
-    def to_dict(self) -> Dict[str, str]:
-        return asdict(self, dict_factory=lambda x: {key.replace('_', ''): str(value).lower() for key, value in x})
-
-    def __get_hash(self) -> int:
-        return self._hash
-
-    def __set_hash(self, value: int) -> None:
-        if value < 1:
-            raise ValueError(f'置換表は1MB以上を指定してください。: {value}')
-        if value > psutil.virtual_memory().available:
-            raise ValueError(f'置換表には空きメモリ容量未満の数値を指定してください。: {value}')
-
-        self._hash = value
-
-    def __get_threads(self) -> int:
-        return self._threads
-
-    def __set_threads(self, value: int) -> None:
-        if value < 1:
-            raise ValueError(f'スレッド数は1以上の数値を指定してください。: {value}')
-
-        self._threads = value
-
-    def __get_network_delay(self) -> int:
-        return self._network_delay
-
-    def __set_network_delay(self, value: int) -> None:
-        if value < 0:
-            raise ValueError(f'通信の平均遅延時間には0以上の数値を指定してください。: {value}')
-
-        self._network_delay = value
-
-    def __get_network_delay2(self) -> int:
-        return self._network_delay2
-
-    def __set_network_delay2(self, value: int) -> None:
-        if value < 0:
-            raise ValueError(f'通信の最大遅延時間には0以上の数値を指定してください。: {value}')
-
-        self._network_delay2 = value
-
-    def __get_eval_share(self) -> int:
-        return self._eval_share
-
-    def __set_eval_share(self, value: bool) -> None:
-        self._eval_share = value
-
-    def __get_multi_pv(self) -> int:
-        return self._multi_pv
-
-    def __set_multi_pv(self, value: int) -> None:
-        if value < 1:
-            raise ValueError(f'候補手の数には1以上の数値を指定してください。: {value}')
-
-        self._multi_pv = value
-
-    def __get_contempt(self) -> int:
-        return self._contempt
-
-    def __set_contempt(self, value: int) -> None:
-        self._contempt = value
-
-    def __get_contempt_from_black(self) -> bool:
-        return self._contempt_from_black
-
-    def __set_contempt_from_black(self, value: bool) -> None:
-        self._contempt_from_black = value
 
 
 class MultiThink:
@@ -130,7 +24,8 @@ class MultiThink:
         self.__sfens: Deque[str] = deque()
         self.__books: Dict[str, Book] = {}
         self.__parallel_count: int = 0
-        self.__engine_options: EngineOption = EngineOption(threads=1, eval_share=True)
+        self.__engine_options: EngineOption = EngineOption()
+        self.__engine_options.eval_share = True
         self.__go_command_option: str = ''
         self.__engines: List[UsiEngine] = []
         self.__positions: List[str] = []
@@ -144,7 +39,7 @@ class MultiThink:
 
     def set_engine_options(self, *, eval_dir: Path = Path('eval'), hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
         self.__engine_options.eval_dir = eval_dir
-        self.__engine_options.hash_ = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
+        self.__engine_options.hash = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
         self.__engine_options.multi_pv = multi_pv
         self.__engine_options.contempt = contempt
         self.__engine_options.contempt_from_black = contempt_from_black
@@ -162,7 +57,7 @@ class MultiThink:
             self.__parallel_count = parallel_count
         else:
             raise ValueError(f'並列数には1以上の数値を指定してください。: {parallel_count}')
-        if len(self.__sfens) == 0:
+        if not self.__sfens:
             raise ValueError('思考対象局面が存在しません。')
 
         logger.info(f'エンジンのパス: {engine_path}')
@@ -178,9 +73,9 @@ class MultiThink:
 
         for _ in range(self.__parallel_count):
             engine = UsiEngine()
-            self.__engines.append(engine)
             engine.set_engine_options(engine_options)
             engine.connect(str(engine_path))
+            self.__engines.append(engine)
             self.__positions.append('')
 
     def set_positions(self, sfens: List[str], start_moves: int = 1, end_moves: int = 1000) -> None:
@@ -220,8 +115,8 @@ class MultiThink:
 
             # 同一局面（手数を無視）が存在する場合、以下の順序で格納する定跡を決定する。
             # 1. 探索深さが深い方
-            # 2. 探索深さが同じ場合は、候補手の数が多い方
-            # 3. 手数が小さい方
+            # 2. 探索深さが同じ場合は、候補手数が多い方
+            # 3. 探索深さと候補手数の両方が同じ場合は、手数が小さい方
             if sfen in self.__books:
                 old_book = self.__books[sfen]
                 old_depth = old_book.body[0].depth
