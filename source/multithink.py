@@ -140,6 +140,8 @@ class MultiThink:
 
                 self.__books[sfen].append(new_book_pos)
 
+        logger.info(f'定跡局面数: {len(self.__books)}')
+
     def run(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None, cancel_callback: Callable[[], bool] = None) -> None:
         self.__set_go_command_option(byoyomi=byoyomi, depth=depth, nodes=nodes)
 
