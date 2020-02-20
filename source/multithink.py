@@ -11,10 +11,10 @@ from typing import Callable, Deque, Dict, List, Optional, Type
 
 import blessed
 import psutil
-from more_itertools import split_before
+from tqdm import tqdm
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
-from library.yaneuraou import Book, BookFormatter, EngineOption
+from library.yaneuraou import BookPos, EngineOption
 
 logger = getLogger(__name__)
 
@@ -22,7 +22,7 @@ logger = getLogger(__name__)
 class MultiThink:
     def __init__(self, output_callback: Optional[Callable[[Optional[UsiThinkResult]], None]] = None) -> None:
         self.__sfens: Deque[str] = deque()
-        self.__books: Dict[str, Book] = {}
+        self.__books: Dict[str, List[BookPos]] = {}
         self.__parallel_count: int = 0
         self.__engine_options: EngineOption = EngineOption()
         self.__engine_options.eval_share = True
@@ -95,43 +95,50 @@ class MultiThink:
         logger.info(f'解析対象局面数: {len(self.__sfens)}')
 
     def set_books(self, book_path: Optional[Path] = None) -> None:
+        self.__books.clear()
+
         if book_path is None:
-            book_lines = []
-        elif book_path.is_file():
-            book_lines = book_path.read_text(encoding='ascii').splitlines()
-            if not book_lines[0] == '#YANEURAOU-DB2016 1.00':
-                raise ValueError(f'定跡には、やねうら王定跡フォーマットを利用してください。')
-            book_lines = book_lines[1:]
-        else:
+            return
+        if not book_path.is_file():
             raise FileNotFoundError(f'ファイルが存在しません。: {book_path}')
 
-        self.__books.clear()
-        for buffer in split_before(book_lines, lambda x: x.startswith('sfen')):
-            sfen = buffer[0]
-            new_book = BookFormatter.deserialize(buffer)
-            new_depth = new_book.body[0].depth
-            new_multi_pv = len(new_book.body)
-            new_game_ply = new_book.game_ply
+        version = '#YANEURAOU-DB2016 1.00'
+        size = book_path.stat().st_size - len(version) - 2
 
-            # 同一局面（手数を無視）が存在する場合、以下の順序で格納する定跡を決定する。
-            # 1. 探索深さが深い方
-            # 2. 探索深さが同じ場合は、候補手数が多い方
-            # 3. 探索深さと候補手数の両方が同じ場合は、手数が小さい方
-            if sfen in self.__books:
-                old_book = self.__books[sfen]
-                old_depth = old_book.body[0].depth
-                old_multi_pv = len(old_book.body)
-                old_game_ply = old_book.game_ply
+        with book_path.open(encoding='ascii') as f, tqdm(total=size, desc='定跡ファイル読み込み') as bar:
+            if f.readline().rstrip('\n') != version:
+                raise ValueError(f'定跡には、やねうら王定跡フォーマットを利用してください。')
 
-                if new_depth < old_depth:
+            sfen: str = ''
+
+            for line in f:
+                # プログレスバーを進める
+                bar.update(len(line) + 1)
+
+                # バージョン識別子またはコメントをスキップ
+                if line.startswith(('#', '//')):
                     continue
-                if new_depth == old_depth:
-                    if new_multi_pv < old_multi_pv:
-                        continue
-                    if new_multi_pv == old_multi_pv and new_game_ply > old_game_ply:
-                        continue
 
-            self.__books[sfen] = new_book
+                # sfenから始まる局面情報
+                if line.startswith('sfen'):
+                    # 文字列（sfen）と手数を除去
+                    sfen = line[5:].rsplit(' ', 1)[0]
+                    continue
+
+                x = line.rstrip('\n').split(' ')
+                new_book_pos = BookPos(best_move=x[0], next_move=x[1], value=int(x[2]), depth=int(x[3]), num=int(x[4]))
+                book_pos = self.__books.get(sfen)
+
+                # 指し手が存在しない場合
+                if book_pos is None:
+                    self.__books[sfen] = [new_book_pos]
+                    continue
+
+                # 重複する指し手は無視
+                if any(x.best_move == new_book_pos.best_move for x in book_pos):
+                    continue
+
+                self.__books[sfen].append(new_book_pos)
 
     def run(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None, cancel_callback: Callable[[], bool] = None) -> None:
         self.__set_go_command_option(byoyomi=byoyomi, depth=depth, nodes=nodes)
