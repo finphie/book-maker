@@ -14,6 +14,7 @@ import psutil
 from tqdm import tqdm
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
+from library.sfen import split_ply
 from library.yaneuraou import BookPos, EngineOption
 
 logger = getLogger(__name__)
@@ -87,10 +88,20 @@ class MultiThink:
         self.__sfens.clear()
 
         # 解析対象となる局面のみを抽出
+        buffer: Dict[str, int] = {}
         for sfen in tqdm(sfens, desc='局面読み込み'):
-            if not start_moves <= int(sfen.rsplit(' ', 1)[1]) <= end_moves:
+            trim_sfen, ply = split_ply(sfen)
+
+            # 手数制限
+            if not start_moves <= ply <= end_moves:
                 continue
-            self.__sfens.append(sfen)
+
+            # 局面を追加
+            # 重複する局面がある場合、より小さい手数にしておく。
+            buffer[trim_sfen] = min(buffer.get(trim_sfen, end_moves), ply)
+
+        for key, value in buffer.items():
+            self.__sfens.append(' '.join((key, str(value))))
 
         logger.info(f'局面数: {len(sfens)}')
         logger.info(f'解析対象局面数: {len(self.__sfens)}')
