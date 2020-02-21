@@ -84,9 +84,10 @@ class MultiThink:
         if start_moves > end_moves:
             raise ValueError(f'解析対象とする最大手数には、最小手数以上の数値を指定してください。{end_moves}')
 
-        # 解析対象となる局面のみを抽出
         self.__sfens.clear()
-        for sfen in sfens:
+
+        # 解析対象となる局面のみを抽出
+        for sfen in tqdm(sfens, desc='局面読み込み'):
             if not start_moves <= int(sfen.rsplit(' ', 1)[1]) <= end_moves:
                 continue
             self.__sfens.append(sfen)
@@ -120,7 +121,7 @@ class MultiThink:
                     continue
 
                 # sfenから始まる局面情報
-                if line.startswith('sfen'):
+                if line.startswith('sfen '):
                     # 文字列（sfen）と手数を除去
                     sfen = line[5:].rsplit(' ', 1)[0]
                     continue
@@ -278,7 +279,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     sfen_path: Path = args.sfen_path
 
-    if not sfen_path.exists():
+    if not sfen_path.is_file():
         raise FileNotFoundError(f'ファイルが存在しません。: {sfen_path}')
 
     sfens = sfen_path.read_text().splitlines()
