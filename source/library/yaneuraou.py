@@ -1,9 +1,12 @@
 from dataclasses import asdict, dataclass, field
 from distutils.util import strtobool
+from json import JSONEncoder
 from pathlib import Path
-from typing import Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, TypedDict
 
 import psutil
+
+from library.Ayane.source.shogi.Ayane import UsiBound, UsiThinkPV, UsiThinkResult
 
 
 class RawEngineOption(TypedDict, total=False):
@@ -167,3 +170,15 @@ class BookPos:
 
     def __str__(self) -> str:
         return ' '.join((self.best_move, self.next_move, str(self.value), str(self.depth), str(self.num)))
+
+
+class UsiThinkResultEncoder(JSONEncoder):
+    def default(self, o: Any) -> Any:
+        if isinstance(o, UsiThinkResult):
+            return o.__dict__
+        if isinstance(o, UsiThinkPV):
+            return o.__dict__
+        if isinstance(o, UsiBound):
+            return o.to_string()
+
+        return JSONEncoder.default(self, o)

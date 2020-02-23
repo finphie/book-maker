@@ -15,13 +15,13 @@ from tqdm import tqdm
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
 from library.sfen import split_ply
-from library.yaneuraou import BookPos, EngineOption
+from library.yaneuraou import BookPos, EngineOption, UsiThinkResultEncoder
 
 logger = getLogger(__name__)
 
 
 class MultiThink:
-    def __init__(self, output_callback: Optional[Callable[[Optional[UsiThinkResult]], None]] = None) -> None:
+    def __init__(self, output_callback: Optional[Callable[[str, Optional[UsiThinkResult]], None]] = None) -> None:
         self.__sfens: Deque[str] = deque()
         self.__books: Dict[str, List[BookPos]] = {}
         self.__parallel_count: int = 0
@@ -30,7 +30,7 @@ class MultiThink:
         self.__go_command_option: str = ''
         self.__engines: List[UsiEngine] = []
         self.__positions: List[str] = []
-        self.__output_callback: Callable[[Optional[UsiThinkResult]], None] = self.__output if output_callback is None else output_callback
+        self.__output_callback: Callable[[str, Optional[UsiThinkResult]], None] = self.__output if output_callback is None else output_callback
 
     def __enter__(self) -> MultiThink:
         return self
@@ -166,7 +166,7 @@ class MultiThink:
                 break
 
             logger.info(f'engine{i}: 解析開始')
-            logger.info(f'- {self.__positions[i]}')
+            logger.info(f'- sfen {self.__positions[i]}')
 
         while True:
             # 解析を停止するかどうか
@@ -183,7 +183,7 @@ class MultiThink:
                 logger.info(f'engine{i}: 解析完了')
 
                 # 出力
-                self.__output_callback(engine.think_result)
+                self.__output_callback(self.__positions[i], engine.think_result)
 
                 # 局面の解析を開始
                 # 解析対象の局面がない場合は、エンジンを切断する。
@@ -192,7 +192,7 @@ class MultiThink:
                     continue
 
                 logger.info(f'engine{i}: 解析開始')
-                logger.info(f'- {self.__positions[i]}')
+                logger.info(f'- sfen {self.__positions[i]}')
 
             # 全対象局面の解析完了
             if all(x.engine_state == UsiEngineState.Disconnected for x in self.__engines):
@@ -249,7 +249,7 @@ class MultiThink:
 
         return True
 
-    def __output(self, result: Optional[UsiThinkResult]) -> None:
+    def __output(self, position: str, result: Optional[UsiThinkResult]) -> None:
         if result is None:
             return
 
@@ -273,6 +273,7 @@ if __name__ == '__main__':
     parser.add_argument('engine_path', type=Path, help='やねうら王のパス')
     parser.add_argument('sfen_path', type=Path, help='sfenのパス')
     parser.add_argument('eval_dir', type=Path, help='評価関数のパス')
+    parser.add_argument('--output', type=Path, default=Path('think.jsonl'), help='出力ファイル名')
     parser.add_argument('--book_path', type=Path, help='定跡ファイル')
     parser.add_argument('--start_moves', type=int, default=1, help='解析対象局面とする最小手数')
     parser.add_argument('--end_moves', type=int, default=1000, help='解析対象とする最大手数')
@@ -289,13 +290,23 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     sfen_path: Path = args.sfen_path
+    output_path: Path = args.output
 
     if not sfen_path.is_file():
         raise FileNotFoundError(f'ファイルが存在しません。: {sfen_path}')
 
     sfens = sfen_path.read_text().splitlines()
 
-    with MultiThink() as think:
+    def output(position: str, result: Optional[UsiThinkResult]) -> None:
+        if result is None:
+            return
+
+        data = json.dumps({position: result}, cls=UsiThinkResultEncoder) + '\n'
+
+        with output_path.open('a', encoding='utf_8') as f:
+            f.write(data)
+
+    with MultiThink(output_callback=output) as think:
         think.set_engine_options(
             eval_dir=args.eval_dir,
             hash_size=args.hash,
