@@ -173,7 +173,7 @@ class BookPos:
 
 
 class UsiThinkResultEncoder(JSONEncoder):
-    def default(self, o: Any) -> Any:
+    def default(self, o: Any) -> Any:  # pylint: disable=method-hidden
         if isinstance(o, UsiThinkResult):
             return o.__dict__
         if isinstance(o, UsiThinkPV):
