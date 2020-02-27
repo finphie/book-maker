@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
 from library.sfen import split_ply
-from library.yaneuraou import BookPos, EngineOption, UsiThinkResultEncoder
+from library.yaneuraou import EngineOption, UsiThinkResultEncoder
 
 logger = getLogger(__name__)
 
@@ -23,7 +23,6 @@ logger = getLogger(__name__)
 class MultiThink:
     def __init__(self, output_callback: Optional[Callable[[str, Optional[UsiThinkResult]], None]] = None) -> None:
         self.__sfens: Deque[str] = deque()
-        self.__books: Dict[str, List[BookPos]] = {}
         self.__parallel_count: int = 0
         self.__engine_options: EngineOption = EngineOption()
         self.__engine_options.eval_share = True
@@ -38,8 +37,9 @@ class MultiThink:
     def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> Optional[bool]:
         self.disconnect()
 
-    def set_engine_options(self, *, eval_dir: Path = Path('eval'), hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
+    def set_engine_options(self, *, eval_dir: Path = Path('eval'), book_path: Optional[Path] = None, hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
         self.__engine_options.eval_dir = eval_dir
+        self.__engine_options.book_path = book_path
         self.__engine_options.hash = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
         self.__engine_options.multi_pv = multi_pv
         self.__engine_options.contempt = contempt
@@ -106,54 +106,6 @@ class MultiThink:
         logger.info(f'局面数: {len(sfens)}')
         logger.info(f'解析対象局面数: {len(self.__sfens)}')
 
-    def set_books(self, book_path: Optional[Path] = None) -> None:
-        self.__books.clear()
-
-        if book_path is None:
-            return
-        if not book_path.is_file():
-            raise FileNotFoundError(f'ファイルが存在しません。: {book_path}')
-
-        version = '#YANEURAOU-DB2016 1.00'
-        size = book_path.stat().st_size - len(version) - 2
-
-        with book_path.open(encoding='ascii') as f, tqdm(total=size, desc='定跡ファイル読み込み') as bar:
-            if f.readline().rstrip('\n') != version:
-                raise ValueError(f'定跡には、やねうら王定跡フォーマットを利用してください。')
-
-            sfen: str = ''
-
-            for line in f:
-                # プログレスバーを進める
-                bar.update(len(line) + 1)
-
-                # バージョン識別子またはコメントをスキップ
-                if line.startswith(('#', '//')):
-                    continue
-
-                # sfenから始まる局面情報
-                if line.startswith('sfen '):
-                    # 文字列（sfen）と手数を除去
-                    sfen = line[5:].rsplit(' ', 1)[0]
-                    continue
-
-                x = line.rstrip('\n').split(' ')
-                new_book_pos = BookPos(best_move=x[0], next_move=x[1], value=int(x[2]), depth=int(x[3]), num=int(x[4]))
-                book_pos = self.__books.get(sfen)
-
-                # 指し手が存在しない場合
-                if book_pos is None:
-                    self.__books[sfen] = [new_book_pos]
-                    continue
-
-                # 重複する指し手は無視
-                if any(x.best_move == new_book_pos.best_move for x in book_pos):
-                    continue
-
-                self.__books[sfen].append(new_book_pos)
-
-        logger.info(f'定跡局面数: {len(self.__books)}')
-
     def run(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None, cancel_callback: Callable[[], bool] = None) -> None:
         self.__set_go_command_option(byoyomi=byoyomi, depth=depth, nodes=nodes)
 
@@ -210,7 +162,6 @@ class MultiThink:
         self.__engines.clear()
         self.__positions.clear()
         self.__sfens.clear()
-        self.__books.clear()
 
     def __set_go_command_option(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
         if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
@@ -309,13 +260,13 @@ if __name__ == '__main__':
     with MultiThink(output_callback=output) as think:
         think.set_engine_options(
             eval_dir=args.eval_dir,
+            book_path=args.book_path,
             hash_size=args.hash,
             multi_pv=args.multi_pv,
             contempt=args.contempt,
             contempt_from_black=args.contempt_from_black
         )
         think.set_positions(sfens, args.start_moves, args.end_moves)
-        think.set_books(args.book_path)
         think.init_engine(args.engine_path, args.parallel_count)
 
         def cancel() -> bool:
