@@ -164,25 +164,23 @@ class MultiThink:
         self.__sfens.clear()
 
     def __set_go_command_option(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
-        if sum(x is not None for x in (byoyomi, depth, nodes)) != 1:
-            raise ValueError(f'秒読み、探索深さ、ノード数のいずれか1つを指定してください。: {byoyomi = } {depth = } {nodes = }')
-
         logger.info('goコマンド設定を更新')
+        go_command_options = []
 
         if byoyomi is not None and byoyomi > 0:
-            self.__go_command_option = f'btime 0 wtime 0 byoyomi {byoyomi}'
+            go_command_options.append(f'btime 0 wtime 0 byoyomi {byoyomi}')
             logger.info(f'- 秒読み: {byoyomi}')
-            return
         if depth is not None and depth > 0:
-            self.__go_command_option = f'depth {depth}'
+            go_command_options.append(f'depth {depth}')
             logger.info(f'- 探索深さ: {depth}')
-            return
         if nodes is not None and nodes > 0:
-            self.__go_command_option = f'nodes {nodes}'
+            go_command_options.append(f'nodes {nodes}')
             logger.info(f'- ノード数: {nodes}')
-            return
 
-        raise ValueError(f'goコマンドの形式が不正です。: {byoyomi = }, {depth = }, {nodes = }')
+        if len(go_command_options) == 0:
+            raise ValueError(f'goコマンドの形式が不正です。: {byoyomi = }, {depth = }, {nodes = }')
+
+        self.__go_command_option = ' '.join(go_command_options)
 
     def __try_analysis(self, engine_number: int) -> bool:
         if not self.__sfens:
@@ -234,10 +232,10 @@ if __name__ == '__main__':
     parser.add_argument('--contempt', type=int, default=2, help='引き分けを受け入れるスコア')
     parser.add_argument('--contempt_from_black', action='store_true', help='Contemptを先手番から見た値とします。')
 
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('--byoyomi', type=int, help='秒読み')
-    group.add_argument('--depth', type=int, help='探索深さ')
-    group.add_argument('--nodes', type=int, help='ノード数')
+    go_command_option_group = parser.add_argument_group('goコマンド設定')
+    go_command_option_group.add_argument('--byoyomi', type=int, help='秒読み')
+    go_command_option_group.add_argument('--depth', type=int, help='探索深さ')
+    go_command_option_group.add_argument('--nodes', type=int, help='ノード数')
 
     args = parser.parse_args()
     sfen_path: Path = args.sfen_path
