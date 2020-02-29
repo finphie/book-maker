@@ -25,7 +25,6 @@ class MultiThink:
         self.__sfens: Deque[str] = deque()
         self.__parallel_count: int = 0
         self.__engine_options: EngineOption = EngineOption()
-        self.__engine_options.eval_share = True
         self.__go_command_option: str = ''
         self.__engines: List[UsiEngine] = []
         self.__positions: List[str] = []
@@ -37,13 +36,13 @@ class MultiThink:
     def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> Optional[bool]:
         self.disconnect()
 
-    def set_engine_options(self, *, eval_dir: Path = Path('eval'), book_path: Optional[Path] = None, hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False) -> None:
-        self.__engine_options.eval_dir = eval_dir
-        self.__engine_options.book_path = book_path
+    def set_engine_options(self, *, hash_size: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False, eval_dir: Path = Path('eval'), book_path: Optional[Path] = None) -> None:
         self.__engine_options.hash = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
         self.__engine_options.multi_pv = multi_pv
         self.__engine_options.contempt = contempt
         self.__engine_options.contempt_from_black = contempt_from_black
+        self.__engine_options.eval_dir = eval_dir
+        self.__engine_options.book_path = book_path
 
         logger.info('エンジン設定を更新')
         for key, value in self.__engine_options.to_dict().items():
@@ -255,14 +254,14 @@ if __name__ == '__main__':
         with output_path.open('a', encoding='utf_8') as f:
             f.write(data)
 
-    with MultiThink(output_callback=output) as think, term.cbreak():
+    with MultiThink() as think, term.cbreak():
         think.set_engine_options(
-            eval_dir=args.eval_dir,
-            book_path=args.book_path,
             hash_size=args.hash,
             multi_pv=args.multi_pv,
             contempt=args.contempt,
-            contempt_from_black=args.contempt_from_black
+            contempt_from_black=args.contempt_from_black,
+            eval_dir=args.eval_dir,
+            book_path=args.book_path,
         )
         think.set_positions(sfens, args.start_moves, args.end_moves)
         think.init_engine(args.engine_path, args.parallel_count)
