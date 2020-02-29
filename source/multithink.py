@@ -165,7 +165,7 @@ class MultiThink:
 
     def __set_go_command_option(self, *, byoyomi: Optional[int] = None, depth: Optional[int] = None, nodes: Optional[int] = None) -> None:
         logger.info('goコマンド設定を更新')
-        go_command_options = []
+        go_command_options: List[str] = []
 
         if byoyomi is not None and byoyomi > 0:
             go_command_options.append(f'btime 0 wtime 0 byoyomi {byoyomi}')
@@ -255,7 +255,7 @@ if __name__ == '__main__':
         with output_path.open('a', encoding='utf_8') as f:
             f.write(data)
 
-    with MultiThink(output_callback=output) as think:
+    with MultiThink(output_callback=output) as think, term.cbreak():
         think.set_engine_options(
             eval_dir=args.eval_dir,
             book_path=args.book_path,
@@ -271,10 +271,9 @@ if __name__ == '__main__':
             value = term.inkey(timeout=0.001)
             return value and value.is_sequence and value.name == 'KEY_ESCAPE'
 
-        with term.cbreak():
-            think.run(
-                byoyomi=args.byoyomi,
-                depth=args.depth,
-                nodes=args.nodes,
-                cancel_callback=cancel
-            )
+        think.run(
+            byoyomi=args.byoyomi,
+            depth=args.depth,
+            nodes=args.nodes,
+            cancel_callback=cancel
+        )
