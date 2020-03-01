@@ -19,7 +19,6 @@ class RawEngineOption(TypedDict, total=False):
     contempt: str
     contempt_from_black: str
     eval_dir: str
-    eval_share: str
     book_moves: str
     book_dir: str
     book_file: str
@@ -45,7 +44,6 @@ class EngineOption:
             contempt='2',
             contempt_from_black='false',
             eval_dir='eval',
-            eval_share='true',
             book_moves='10000',
             book_dir='book',
             book_file='no_book',
@@ -156,14 +154,6 @@ class EngineOption:
             raise FileNotFoundError(f'ディレクトリが存在しません。: {value}')
 
         self.__option['eval_dir'] = str(value)
-
-    @property
-    def eval_share(self) -> bool:
-        return strtobool(self.__option['eval_share'])
-
-    @eval_share.setter
-    def eval_share(self, value: bool) -> None:
-        self.__option['eval_share'] = str(value).lower()
 
     @property
     def book_moves(self) -> int:
