@@ -254,7 +254,7 @@ if __name__ == '__main__':
         with output_path.open('a', encoding='utf_8') as f:
             f.write(data)
 
-    with MultiThink() as think, term.cbreak():
+    with MultiThink(output) as think, term.cbreak():
         think.set_engine_options(
             hash_size=args.hash,
             multi_pv=args.multi_pv,
