@@ -14,7 +14,7 @@ import psutil
 from tqdm import tqdm
 
 from library.Ayane.source.shogi.Ayane import UsiEngine, UsiEngineState, UsiThinkResult
-from library.sfen import split_ply
+from library.core import split_sfen
 from library.yaneuraou import EngineOption, UsiThinkResultEncoder
 
 logger = getLogger(__name__)
@@ -89,7 +89,7 @@ class MultiThink:
         # 解析対象となる局面のみを抽出
         buffer: Dict[str, int] = {}
         for sfen in tqdm(sfens, desc='局面読み込み'):
-            trim_sfen, ply = split_ply(sfen)
+            trim_sfen, ply = split_sfen(sfen)
 
             # 手数制限
             if not start_moves <= ply <= end_moves:

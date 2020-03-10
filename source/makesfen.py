@@ -1,170 +1,258 @@
-from more_itertools import split_before
-from tqdm import tqdm
 import argparse
-import pandas
-import pathlib
+from pathlib import Path
+from typing import Dict, Generator, List, Optional
+
+import numpy as np
 import shogi
 import shogi.CSA
+from shogi.CSA import Parser
+from tqdm import tqdm
+
+from library.core import GameResult, read_csa, split_sfen
 
 
-def indexes(source, value):
-    return [i for i, x in enumerate(source) if x.startswith(value)]
+class MakeSfen:
+    __MAX_VALUE = 100000
+
+    def __init__(self, csa_path: Path) -> None:
+        self.__csa_files: Generator[Path, None, None]
+        if csa_path.is_dir():
+            self.__csa_files = csa_path.glob('**/*.csa')
+        elif csa_path.is_file():
+            def x() -> Generator[Path, None, None]:
+                yield csa_path
+            self.__csa_files = x()
+        else:
+            raise ValueError(f'csaファイルが存在しません。: {csa_path}')
+
+        # 最小レーティング
+        self.__min_rate: int = 0
+
+        # 最大レーティング
+        self.__max_rate: int = 10000
+
+        # 先手の最小評価値
+        self.__min_black_value: int = -self.__MAX_VALUE
+
+        # 先手の最大評価値
+        self.__max_black_value: int = self.__MAX_VALUE
+
+        # 後手の最小評価値
+        self.__min_white_value: int = -self.__MAX_VALUE
+
+        # 後手の最大評価値
+        self.__max_white_value: int = self.__MAX_VALUE
+
+        # 千日手での最小評価値
+        # Noneの時は、先後の最小評価値に従う。
+        self.__min_draw_value: Optional[int] = None
+
+        # 千日手での最大評価値
+        self.__max_draw_value: int = self.__MAX_VALUE
+
+        # 最大差分評価値
+        self.__max_diff_value: int = self.__MAX_VALUE
+
+        # 出力対象とする最大評価値
+        self.__end_value: int = self.__MAX_VALUE
+
+    def set_rate_limit(self, min_rate: int, max_rate: int) -> None:
+        if min_rate < 0:
+            raise ValueError(f'最低レーティングには、0以上の数値を指定してください。: {min_rate}')
+        if max_rate < min_rate:
+            raise ValueError(f'最高レーティングには、最低レーティング以上の数値を指定してください。: {max_rate}')
+
+        self.__min_rate = min_rate
+        self.__max_rate = max_rate
+
+    def set_result_filter(self, result: GameResult, min_value: Optional[int], max_value: Optional[int]) -> None:
+        if min_value is max_value is not None and min_value > max_value:
+            raise ValueError(f'最小評価値は最大評価値以下の数値を指定してください。: {min_value}')
+
+        if result == GameResult.BLACK_WIN:
+            self.__min_black_value = -self.__MAX_VALUE if min_value is None else min_value
+            self.__max_black_value = self.__MAX_VALUE if max_value is None else max_value
+        elif result == GameResult.WHITE_WIN:
+            self.__min_white_value = -self.__MAX_VALUE if max_value is None else -max_value
+            self.__max_white_value = self.__MAX_VALUE if min_value is None else -min_value
+        elif result == GameResult.SENNICHITE:
+            self.__min_draw_value = min_value
+            self.__max_draw_value = self.__MAX_VALUE if max_value is None else max_value
+
+    def set_diff_value_limit(self, diff: int) -> None:
+        self.__max_diff_value = diff
+
+    def set_value_limit(self, end_value: int) -> None:
+        self.__end_value = end_value
+
+    def run(self) -> List[str]:  # noqa: C901
+        sfens: Dict[str, int] = {}
+
+        for csa_file in tqdm(self.__csa_files):
+            print(csa_file)
+            try:
+                notation = read_csa(csa_file)
+            except ValueError:
+                continue
+
+            # 指定範囲以外のレーティングの場合は除外
+            if not self.__min_rate <= max(notation.black.rate, notation.white.rate) <= self.__max_rate:
+                continue
+
+            # 投了や入玉宣言勝ち、千日手、最大手数制限以外で終局した場合は除外
+            if notation.result == GameResult.UNKNOWN:
+                continue
+
+            # 評価値
+            values = np.asarray([move.value for move in notation.moves], dtype=np.int32)
+            black_values = values[::2]
+            white_values = values[1::2]
+
+            result = notation.result
+
+            # 先手勝利
+            if notation.result == GameResult.BLACK_WIN and not self.__is_output_black(black_values):
+                continue
+
+            # 後手勝利
+            elif notation.result == GameResult.WHITE_WIN and not self.__is_output_white(white_values):
+                continue
+
+            # 千日手
+            elif notation.result == GameResult.SENNICHITE and not self.__is_output_draw(values, black_values, white_values):
+                continue
+
+            # 最大手数制限
+            elif notation.result == GameResult.MAX_MOVES:
+                # 先手勝勢
+                if self.__is_output_black(black_values):
+                    result = GameResult.BLACK_WIN
+
+                # 後手勝勢
+                elif self.__is_output_white(white_values):
+                    result = GameResult.WHITE_WIN
+
+                # その他
+                else:
+                    continue
+
+            board = shogi.Board()
+
+            # sfen出力
+            for i, move_data in enumerate(notation.moves):
+                _, move = Parser.parse_move_str(move_data.move, board)
+                board.push_usi(move)
+
+                # 評価値上限の場合は、それ以降の棋譜を出力しない。
+                if move_data.value > self.__end_value:
+                    break
+
+                # 勝利（最大手数制限の場合は勝勢）側の棋譜のみを出力
+                # 千日手の場合は両方
+                if (result == GameResult.BLACK_WIN and i % 2 == 0) or (result == GameResult.WHITE_WIN and i % 2 == 1) or result == GameResult.SENNICHITE:
+                    position, game_ply = split_sfen(f'sfen {board.sfen()}')
+                    sfens[position] = min(sfens.get(position, game_ply), game_ply)
+
+        return [f'sfen {position} {game_ply}' for position, game_ply in sfens.items()]
+
+    def __is_output_black(self, black_values) -> bool:
+        # 全ての評価値が0の場合
+        if np.all(black_values == 0):
+            return False
+
+        nonzero_black_values = black_values[black_values != 0]
+
+        # 評価値0以外の指し手が手数の半分未満の場合
+        if np.size(nonzero_black_values) < np.size(black_values) * 0.5:
+            return False
+
+        # 指定値より不利になった場合や投了時の評価値が指定値未満の場合
+        if np.min(black_values) < self.__min_black_value or np.max(black_values) < self.__max_black_value:
+            return False
+
+        # 直前の評価値との差が指定値以上に不利になった場合
+        diff = np.diff(nonzero_black_values)
+        if np.min(diff) <= -self.__max_diff_value:
+            return False
+
+        return True
+
+    def __is_output_white(self, white_values) -> bool:
+        # 全ての評価値が0の場合
+        if np.all(white_values == 0):
+            return False
+
+        nonzero_white_values = white_values[white_values != 0]
+
+        # 評価値0以外の指し手が手数の半分未満の場合
+        if np.size(nonzero_white_values) < np.size(white_values) * 0.5:
+            return False
+
+        # 指定値より不利になった場合や投了時の評価値が指定値未満の場合
+        if np.max(white_values) > self.__max_white_value or np.min(white_values) > self.__min_white_value:
+            return False
+
+        # 直前の評価値との差が指定値以上に不利になった場合
+        diff = np.diff(nonzero_white_values)
+        if np.max(diff) >= self.__max_diff_value:
+            return False
+
+        return True
+
+    def __is_output_draw(self, values, black_values, white_values) -> bool:
+        # 全ての評価値が0の場合
+        if np.all(values == 0):
+            return False
+
+        # 先手: 指定値より形勢に差がある場合（有利や不利になった場合）
+        min_black_value: int = self.__min_black_value if self.__min_draw_value is None else self.__min_draw_value
+        if np.min(black_values) < min_black_value or np.max(black_values) > self.__max_draw_value:
+            return False
+
+        # 後手: 指定値より形勢に差がある場合（有利や不利になった場合）
+        max_white_value: int = self.__max_white_value if self.__min_draw_value is None else -self.__min_draw_value  # pylint: disable=invalid-unary-operand-type
+        if np.max(white_values) > max_white_value or np.min(white_values) < -self.__max_draw_value:
+            return False
+
+        return True
 
 
-def split_sfen(source):
-    position, game_ply = source.rsplit(' ', 1)
-    return position, int(game_ply)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
 
+    parser.add_argument('input', help='csaファイルのディレクトリ')
+    parser.add_argument('-o', '--output', default='book.sfen', help='sfenの出力先')
 
-parser = argparse.ArgumentParser()
+    rate_group = parser.add_argument_group('レーティング')
+    rate_group.add_argument('--min_rate', type=int, default=0, help='レーティング最小値')
+    rate_group.add_argument('--max_rate', type=int, default=5000, help='レーティング最大値')
 
-parser.add_argument('input', help='csaファイルのディレクトリ')
-parser.add_argument('rate', type=int, choices=range(1, 10000), help='出力対象とする最低レーティング', metavar='rate')
-parser.add_argument('max_value', type=int, choices=range(300, 100000), help='出力対象とする手番側から見た最大評価値', metavar='max value')
-parser.add_argument('-o', '--output', default='book.sfen', help='sfenの出力先')
+    value_group = parser.add_argument_group('評価値')
+    value_group.add_argument('--min_black_value', type=int, default=-10, help='先手勝利時における、先手側から見た最小評価値')
+    value_group.add_argument('--max_black_value', type=int, default=100000, help='先手勝利時における、先手側から見た最大評価値')
+    value_group.add_argument('--min_white_value', type=int, default=-150, help='後手勝利時における、後手側から見た最小評価値')
+    value_group.add_argument('--max_white_value', type=int, default=100000, help='後手勝利時における、後手側から見た最大評価値')
+    value_group.add_argument('--draw_value', type=int, default=150, help='千日手における、手番側から見た最大評価値')
+    value_group.add_argument('--end_value', type=int, default=0, help='勝利側から見た終局時の最小評価値')
+    value_group.add_argument('--diff_value', type=int, default=100000, help='直前の評価値との差')
 
-args = parser.parse_args()
-csa_files = pathlib.Path(args.input).glob('**/*.csa')
-skip_rate = args.rate
-max_value = args.max_value
-output_path = pathlib.Path(args.output)
+    args = parser.parse_args()
+    csa_path = Path(args.input)
+    output_path = Path(args.output)
 
-board = shogi.Board()
-sfens = dict((split_sfen(board.sfen()),))
+    make = MakeSfen(csa_path)
+    make.set_rate_limit(3800, 1000000)
+    make.set_result_filter(GameResult.BLACK_WIN, -10, 2000)
+    make.set_result_filter(GameResult.WHITE_WIN, -150, 2000)
+    make.set_result_filter(GameResult.SENNICHITE, None, 150)
+    make.set_diff_value_limit(300)
+    make.set_value_limit(800)
+    sfens: List[str] = make.run()
 
-for csa_file in tqdm(csa_files):
-    try:
-        notation = shogi.CSA.Parser.parse_file(csa_file)[0]
-    except ValueError:
-        continue
-    lines = csa_file.read_text().splitlines()
+    for sfen in tqdm(sfens):
+        print(sfen)
 
-    # 対局者名
-    black_name = notation['names'][shogi.BLACK]
-    white_name = notation['names'][shogi.WHITE]
-
-    # レーティング
-    rate_index = lines.index('+') + 2
-    black_rate = white_rate = 0.0
-    if lines[rate_index].startswith("'black_rate:"):
-        black_rate = float(lines[rate_index].split(':')[-1])
-        rate_index += 1
-    if lines[rate_index].startswith("'white_rate:"):
-        white_rate = float(lines[rate_index].split(':')[-1])
-
-    # 指定値未満のレーティングの場合は除外
-    if skip_rate > max(black_rate, white_rate):
-        continue
-
-    # 終局結果を取得
-    if not (result_indexes := indexes(lines, '%')):
-        continue
-    result_index = result_indexes[0]
-    result = lines[result_index][1:]
-    summary = lines[indexes(lines, "'summary:")[0]].split(':')[1:]
-
-    # 投了と入玉宣言勝ち、千日手以外で終局した場合は除外
-    # summaryをチェックしているのは、%TORYOが送信された場合でもabnormalになっていることがあるため。
-    if result not in ['TORYO', 'KACHI', 'SENNICHITE'] or result != summary[0].upper():
-        continue
-
-    # 評価値と読み筋の組み合わせを取得
-    # TODO: 読み筋に不正な文字が入る場合があるので対処する
-    move_list = list(split_before(lines[rate_index+1:result_index], lambda x: x.startswith('+') or x.startswith('-')))
-    for i in range(len(move_list)):
-        if len(move_list[i]) < 3:
-            move_list[i] = [0, None]
-            continue
-        x = move_list[i][2].lstrip("'* ").split(' ', 1)
-        move_list[i] = [int(x[0]), x[1]] if len(x) != 1 else [int(x[0]), None]
-
-    # 指し手と評価値、読み筋の組み合わせを取得
-    move_data = pandas.concat([pandas.Series(notation['moves'], name='move'), pandas.DataFrame(move_list, columns=['value', 'pv'])], axis=1)
-
-    black_move_data = move_data[::2]
-    white_move_data = move_data[1::2]
-
-    values = move_data['value']
-    black_values = black_move_data['value'].copy()
-    white_values = white_move_data['value'].copy()
-
-    # 先手勝利
-    if notation['win'] == 'b':
-        # 1. 先手側が評価値を出力していない場合は除外
-        # 2. 先手側の評価値が一度も2000以上にならない場合は除外
-        # 3. 先手側の評価値が終局まで-10以上
-        if (black_values == 0).all() or black_values.max() < 2000 or (black_values < -10).any():
-            continue
-
-        # 評価値0は定跡などの要因で出力される場合があるので無視する。
-        black_values[black_values == 0] = None
-        black_values = black_values.fillna(method='bfill')
-
-        # 直前の評価値から300以上下がった場合は除外
-        if (black_values.diff() <= -300).any():
-            continue
-
-        # sfen出力
-        board.reset()
-        for data in black_move_data.itertuples():
-            # 評価値1000より大きい場合は、それ以降の指し手を記録しない。
-            if data.value > max_value:
-                break
-
-            board.push_usi(data.move)
-            position, game_ply = split_sfen(board.sfen())
-            if sfens.get(position, 999) > game_ply:
-                sfens[position] = game_ply
-            board.push_usi(move_data['move'][data.Index + 1])
-
-    # 後手勝利
-    elif notation['win'] == 'w':
-        # 1. 後手側が評価値を出力していない場合は除外
-        # 2. 後手側の評価値が一度も-2000以下にならない場合は除外
-        # 3. 後手側の評価値が終局まで150以下
-        if (white_values == 0).all() or white_values.min() > -2000 or (white_values > 150).any():
-            continue
-
-        # 評価値0は定跡などの要因で出力される場合があるので無視する。
-        white_values[white_values == 0] = None
-        white_values = white_values.fillna(method='bfill')
-
-        # 直前の評価値から300以上下がった場合は除外
-        if (white_values.diff() >= 300).any():
-            continue
-
-        # sfen出力
-        board.reset()
-        for data in white_move_data.itertuples():
-            # 評価値-1000より小さい場合は、それ以降の指し手を記録しない。
-            if data.value < -max_value:
-                break
-
-            board.push_usi(move_data['move'][data.Index - 1])
-            board.push_usi(data.move)
-            position, game_ply = split_sfen(board.sfen())
-            if sfens.get(position, 999) > game_ply:
-                sfens[position] = game_ply
-
-    # 引き分け
-    elif notation['win'] == '-':
-        # 先後両方が評価値を出力していない場合は除外
-        if (values == 0).all():
-            continue
-
-        # 先手側の評価値が終局まで-10以上150以下かつ後手側の評価値が終局まで-150以上150以下
-        if ((black_values < -10) | (black_values > 150)).any() or ((white_values < -150) | (white_values > 150)).any():
-            continue
-
-        # sfen出力
-        board.reset()
-        for data in move_data.itertuples():
-            board.push_usi(data.move)
-            position, game_ply = split_sfen(board.sfen())
-            if sfens.get(position, 999) > game_ply:
-                sfens[position] = game_ply
-
-# ファイル出力
-with output_path.open('w', encoding='utf_8') as f:
-    for position, game_ply in tqdm(sfens.items()):
-        f.write(f'sfen {position} {game_ply}\n')
+    # ファイル出力
+    # with output_path.open('w', encoding='utf_8') as f:
+    #     for sfen in tqdm(sfens):
+    #         f.write(f'{sfen}\n')
