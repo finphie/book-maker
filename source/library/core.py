@@ -152,11 +152,6 @@ def read_csa(path: Path) -> Optional[Notation]:  # noqa: C901
                 notation.result = GameResult.SENNICHITE
                 continue
 
-            # 最大手数制限
-            if result == 'MAX_MOVES':
-                notation.result = GameResult.MAX_MOVES
-                continue
-
             # それ以外
             notation.result = GameResult.UNKNOWN
             continue
@@ -189,8 +184,11 @@ def read_csa(path: Path) -> Optional[Notation]:  # noqa: C901
             # floodgate summary行
             if comment.startswith('summary:'):
                 result, _, _ = comment[8:].split(':')
+
+                # 最大手数制限
                 if result == 'max_moves':
                     notation.result = GameResult.MAX_MOVES
+
                 continue
 
             continue
