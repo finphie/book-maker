@@ -32,29 +32,29 @@ class MakeSfen:
         self.__max_rate: int = 10000
 
         # 先手の最小評価値
-        self.__min_black_value: int = -self.__MAX_VALUE
+        self.__min_black_value: int = -MakeSfen.__MAX_VALUE
 
         # 先手の最大評価値
-        self.__max_black_value: int = self.__MAX_VALUE
+        self.__max_black_value: int = MakeSfen.__MAX_VALUE
 
         # 後手の最小評価値
-        self.__min_white_value: int = -self.__MAX_VALUE
+        self.__min_white_value: int = -MakeSfen.__MAX_VALUE
 
         # 後手の最大評価値
-        self.__max_white_value: int = self.__MAX_VALUE
+        self.__max_white_value: int = MakeSfen.__MAX_VALUE
 
         # 千日手での最小評価値
         # Noneの時は、先後の最小評価値に従う。
         self.__min_draw_value: Optional[int] = None
 
         # 千日手での最大評価値
-        self.__max_draw_value: int = self.__MAX_VALUE
+        self.__max_draw_value: int = MakeSfen.__MAX_VALUE
 
         # 最大差分評価値
-        self.__max_diff_value: int = self.__MAX_VALUE
+        self.__max_diff_value: int = MakeSfen.__MAX_VALUE
 
         # 出力対象とする最大評価値
-        self.__end_value: int = self.__MAX_VALUE
+        self.__end_value: int = MakeSfen.__MAX_VALUE
 
     def set_rate_limit(self, min_rate: int, max_rate: int) -> None:
         if min_rate < 0:
@@ -70,14 +70,14 @@ class MakeSfen:
             raise ValueError(f'最小評価値は最大評価値以下の数値を指定してください。: {min_value}')
 
         if result == GameResult.BLACK_WIN:
-            self.__min_black_value = -self.__MAX_VALUE if min_value is None else min_value
-            self.__max_black_value = self.__MAX_VALUE if max_value is None else max_value
+            self.__min_black_value = -MakeSfen.__MAX_VALUE if min_value is None else min_value
+            self.__max_black_value = MakeSfen.__MAX_VALUE if max_value is None else max_value
         elif result == GameResult.WHITE_WIN:
-            self.__min_white_value = -self.__MAX_VALUE if max_value is None else -max_value
-            self.__max_white_value = self.__MAX_VALUE if min_value is None else -min_value
+            self.__min_white_value = -MakeSfen.__MAX_VALUE if max_value is None else -max_value
+            self.__max_white_value = MakeSfen.__MAX_VALUE if min_value is None else -min_value
         elif result == GameResult.SENNICHITE:
             self.__min_draw_value = min_value
-            self.__max_draw_value = self.__MAX_VALUE if max_value is None else max_value
+            self.__max_draw_value = MakeSfen.__MAX_VALUE if max_value is None else max_value
 
     def set_diff_value_limit(self, diff: int) -> None:
         self.__max_diff_value = diff

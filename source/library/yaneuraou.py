@@ -54,7 +54,7 @@ class EngineOption:
         )
 
     def to_dict(self) -> Dict[str, str]:
-        def get_option_name(value: str):
+        def get_option_name(value: str) -> str:
             return value if value.startswith('usi_') else value.replace('_', '')
 
         return asdict(
