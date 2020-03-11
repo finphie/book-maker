@@ -11,7 +11,7 @@ from library.Ayane.source.shogi.Ayane import UsiBound, UsiThinkPV, UsiThinkResul
 
 class RawEngineOption(TypedDict, total=False):
     threads: str
-    hash_: str
+    usi_hash: str
     eval_hash: str
     multi_pv: str
     network_delay: str
@@ -36,7 +36,7 @@ class EngineOption:
     def __get_default() -> RawEngineOption:
         return RawEngineOption(
             threads='1',
-            hash_='16',
+            usi_hash='16',
             eval_hash='128',
             multi_pv='1',
             network_delay='0',
@@ -54,9 +54,12 @@ class EngineOption:
         )
 
     def to_dict(self) -> Dict[str, str]:
+        def get_option_name(value: str):
+            return value if value.startswith('usi_') else value.replace('_', '')
+
         return asdict(
             self,
-            dict_factory=lambda x: {key.replace('_', ''): value.lower() for key, value in x[0][1].items()}
+            dict_factory=lambda x: {get_option_name(key): value.lower() for key, value in x[0][1].items()}
         )
 
     @property
@@ -71,15 +74,15 @@ class EngineOption:
         self.__option['threads'] = str(value)
 
     @property
-    def hash(self) -> int:
-        return int(self.__option['hash_'])
+    def usi_hash(self) -> int:
+        return int(self.__option['usi_hash'])
 
-    @hash.setter
-    def hash(self, value: int) -> None:
+    @usi_hash.setter
+    def usi_hash(self, value: int) -> None:
         if not 1 <= value <= min(1048576, psutil.virtual_memory().available / 1024):
             raise ValueError(f'置換表には、1MB以上空きメモリ容量以下の数値を指定してください。: {value}')
 
-        self.__option['hash_'] = str(value)
+        self.__option['usi_hash'] = str(value)
 
     @property
     def eval_hash(self) -> int:
