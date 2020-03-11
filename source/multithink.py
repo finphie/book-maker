@@ -37,7 +37,7 @@ class MultiThink:
         self.disconnect()
 
     def set_engine_options(self, *, usi_hash: Optional[int] = None, multi_pv: int = 1, contempt: int = 2, contempt_from_black: bool = False, eval_dir: Path = Path('eval'), book_path: Optional[Path] = None) -> None:
-        self.__engine_options.usi_hash = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if hash_size is None else hash_size
+        self.__engine_options.usi_hash = int((psutil.virtual_memory().available * 0.75 / 1024 ** 2 - 1024) / self.__parallel_count) if usi_hash is None else usi_hash
         self.__engine_options.multi_pv = multi_pv
         self.__engine_options.contempt = contempt
         self.__engine_options.contempt_from_black = contempt_from_black
