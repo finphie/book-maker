@@ -86,10 +86,9 @@ class MakeSfen:
         self.__end_value = end_value
 
     def run(self) -> List[str]:  # noqa: C901
-        sfens: Dict[str, int] = {}
+        sfens: Dict[str, int] = {'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b -': 1}
 
         for csa_file in tqdm(self.__csa_files):
-            print(csa_file)
             try:
                 notation = read_csa(csa_file)
             except ValueError:
@@ -119,7 +118,7 @@ class MakeSfen:
                 continue
 
             # 千日手
-            elif notation.result == GameResult.SENNICHITE and not self.__is_output_draw(values, black_values, white_values):
+            elif notation.result == GameResult.SENNICHITE and not self.__is_output_sennichite(values, black_values, white_values):
                 continue
 
             # 最大手数制限
@@ -138,18 +137,18 @@ class MakeSfen:
 
             board = shogi.Board()
 
-            # sfen出力
+            # 棋譜出力
             for i, move_data in enumerate(notation.moves):
                 _, move = Parser.parse_move_str(move_data.move, board)
                 board.push_usi(move)
 
-                # 評価値上限の場合は、それ以降の棋譜を出力しない。
-                if move_data.value > self.__end_value:
-                    break
-
                 # 勝利（最大手数制限の場合は勝勢）側の棋譜のみを出力
                 # 千日手の場合は両方
                 if (result == GameResult.BLACK_WIN and i % 2 == 0) or (result == GameResult.WHITE_WIN and i % 2 == 1) or result == GameResult.SENNICHITE:
+                    # 評価値上限の場合は、それ以降の棋譜を出力しない。
+                    if move_data.value > self.__end_value:
+                        break
+
                     position, game_ply = split_sfen(f'sfen {board.sfen()}')
                     sfens[position] = min(sfens.get(position, game_ply), game_ply)
 
@@ -199,7 +198,7 @@ class MakeSfen:
 
         return True
 
-    def __is_output_draw(self, values, black_values, white_values) -> bool:
+    def __is_output_sennichite(self, values, black_values, white_values) -> bool:
         # 全ての評価値が0の場合
         if np.all(values == 0):
             return False
@@ -249,10 +248,7 @@ if __name__ == '__main__':
     make.set_value_limit(800)
     sfens: List[str] = make.run()
 
-    for sfen in tqdm(sfens):
-        print(sfen)
-
     # ファイル出力
-    # with output_path.open('w', encoding='utf_8') as f:
-    #     for sfen in tqdm(sfens):
-    #         f.write(f'{sfen}\n')
+    with output_path.open('w', encoding='utf_8') as f:
+        for sfen in tqdm(sfens):
+            f.write(f'{sfen}\n')
