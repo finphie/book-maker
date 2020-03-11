@@ -144,9 +144,10 @@ class MakeSfen:
 
                 # 勝利（最大手数制限の場合は勝勢）側の棋譜のみを出力
                 # 千日手の場合は両方
-                if (result == GameResult.BLACK_WIN and i % 2 == 0) or (result == GameResult.WHITE_WIN and i % 2 == 1) or result == GameResult.SENNICHITE:
+                x = 1 if i % 2 == 0 else -1
+                if (result == GameResult.BLACK_WIN and x == 1) or (result == GameResult.WHITE_WIN and x == -1) or result == GameResult.SENNICHITE:
                     # 評価値上限の場合は、それ以降の棋譜を出力しない。
-                    if move_data.value > self.__end_value:
+                    if move_data.value * x > self.__end_value:
                         break
 
                     position, game_ply = split_sfen(f'sfen {board.sfen()}')
