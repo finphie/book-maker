@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Dict, Generator, List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import shogi
@@ -8,23 +8,13 @@ import shogi.CSA
 from shogi.CSA import Parser
 from tqdm import tqdm
 
-from library.core import GameResult, read_csa, split_sfen
+from library.core import GameResult, Notation, read_csa, split_sfen
 
 
 class MakeSfen:
     __MAX_VALUE = 100000
 
-    def __init__(self, csa_path: Path) -> None:
-        self.__csa_files: Generator[Path, None, None]
-        if csa_path.is_dir():
-            self.__csa_files = csa_path.glob('**/*.csa')
-        elif csa_path.is_file():
-            def x() -> Generator[Path, None, None]:
-                yield csa_path
-            self.__csa_files = x()
-        else:
-            raise ValueError(f'csaファイルが存在しません。: {csa_path}')
-
+    def __init__(self) -> None:
         # 最小レーティング
         self.__min_rate: int = 0
 
@@ -85,75 +75,94 @@ class MakeSfen:
     def set_value_limit(self, end_value: int) -> None:
         self.__end_value = end_value
 
-    def run(self) -> List[str]:  # noqa: C901
+    def run(self, csa_path: Path) -> List[str]:
+        if csa_path.is_dir():
+            csa_files: List[Path] = [x for x in tqdm(csa_path.glob('**/*.csa'))]
+        elif csa_path.is_file():
+            csa_files = [csa_path]
+        else:
+            raise ValueError(f'csaファイルが存在しません。: {csa_path}')
+
         sfens: Dict[str, int] = {'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b -': 1}
 
-        for csa_file in tqdm(self.__csa_files):
+        for csa_file in tqdm(csa_files):
             try:
                 notation = read_csa(csa_file)
             except ValueError:
                 continue
 
-            # 指定範囲以外のレーティングの場合は除外
-            if not self.__min_rate <= max(notation.black.rate, notation.white.rate) <= self.__max_rate:
+            x = self.__worker(notation)
+
+            if x is None:
                 continue
 
-            # 投了や入玉宣言勝ち、千日手、最大手数制限以外で終局した場合は除外
-            if notation.result == GameResult.UNKNOWN:
-                continue
-
-            # 評価値
-            values = np.asarray([move.value for move in notation.moves], dtype=np.int32)
-            black_values = values[::2]
-            white_values = values[1::2]
-
-            result = notation.result
-
-            # 先手勝利
-            if notation.result == GameResult.BLACK_WIN and not self.__is_output_black(black_values):
-                continue
-
-            # 後手勝利
-            elif notation.result == GameResult.WHITE_WIN and not self.__is_output_white(white_values):
-                continue
-
-            # 千日手
-            elif notation.result == GameResult.SENNICHITE and not self.__is_output_sennichite(values, black_values, white_values):
-                continue
-
-            # 最大手数制限
-            elif notation.result == GameResult.MAX_MOVES:
-                # 先手勝勢
-                if self.__is_output_black(black_values):
-                    result = GameResult.BLACK_WIN
-
-                # 後手勝勢
-                elif self.__is_output_white(white_values):
-                    result = GameResult.WHITE_WIN
-
-                # その他
-                else:
-                    continue
-
-            board = shogi.Board()
-
-            # 棋譜出力
-            for i, move_data in enumerate(notation.moves):
-                _, move = Parser.parse_move_str(move_data.move, board)
-                board.push_usi(move)
-
-                # 勝利（最大手数制限の場合は勝勢）側の棋譜のみを出力
-                # 千日手の場合は両方
-                x = 1 if i % 2 == 0 else -1
-                if (result == GameResult.BLACK_WIN and x == 1) or (result == GameResult.WHITE_WIN and x == -1) or result == GameResult.SENNICHITE:
-                    # 評価値上限の場合は、それ以降の棋譜を出力しない。
-                    if move_data.value * x > self.__end_value:
-                        break
-
-                    position, game_ply = split_sfen(f'sfen {board.sfen()}')
-                    sfens[position] = min(sfens.get(position, game_ply), game_ply)
+            for sfen in x:
+                position, game_ply = split_sfen(f'sfen {sfen}')
+                sfens[position] = min(sfens.get(position, game_ply), game_ply)
 
         return [f'sfen {position} {game_ply}' for position, game_ply in sfens.items()]
+
+    def __worker(self, notation: Notation) -> Optional[List[str]]:  # noqa: C901
+        # 指定範囲以外のレーティングの場合は除外
+        if not self.__min_rate <= max(notation.black.rate, notation.white.rate) <= self.__max_rate:
+            return
+
+        # 投了や入玉宣言勝ち、千日手、最大手数制限以外で終局した場合は除外
+        if notation.result == GameResult.UNKNOWN:
+            return
+
+        # 評価値
+        values = np.asarray([move.value for move in notation.moves], dtype=np.int32)
+        black_values = values[::2]
+        white_values = values[1::2]
+
+        result = notation.result
+
+        # 先手勝利
+        if notation.result == GameResult.BLACK_WIN and not self.__is_output_black(black_values):
+            return
+
+        # 後手勝利
+        elif notation.result == GameResult.WHITE_WIN and not self.__is_output_white(white_values):
+            return
+
+        # 千日手
+        elif notation.result == GameResult.SENNICHITE and not self.__is_output_sennichite(values, black_values, white_values):
+            return
+
+        # 最大手数制限
+        elif notation.result == GameResult.MAX_MOVES:
+            # 先手勝勢
+            if self.__is_output_black(black_values):
+                result = GameResult.BLACK_WIN
+
+            # 後手勝勢
+            elif self.__is_output_white(white_values):
+                result = GameResult.WHITE_WIN
+
+            # その他
+            else:
+                return
+
+        board = shogi.Board()
+        sfens = []
+
+        # 棋譜出力
+        for i, move_data in enumerate(notation.moves):
+            _, move = Parser.parse_move_str(move_data.move, board)
+            board.push_usi(move)
+
+            # 勝利（最大手数制限の場合は勝勢）側の棋譜のみを出力
+            # 千日手の場合は両方
+            x = 1 if i % 2 == 0 else -1
+            if (result == GameResult.BLACK_WIN and x == 1) or (result == GameResult.WHITE_WIN and x == -1) or result == GameResult.SENNICHITE:
+                # 評価値上限の場合は、それ以降の棋譜を出力しない。
+                if move_data.value * x > self.__end_value:
+                    break
+
+                sfens.append(board.sfen())
+
+        return sfens
 
     def __is_output_black(self, black_values) -> bool:
         # 全ての評価値が0の場合
@@ -240,14 +249,14 @@ if __name__ == '__main__':
     csa_path = Path(args.input)
     output_path = Path(args.output)
 
-    make = MakeSfen(csa_path)
+    make = MakeSfen()
     make.set_rate_limit(3800, 1000000)
     make.set_result_filter(GameResult.BLACK_WIN, -10, 2000)
     make.set_result_filter(GameResult.WHITE_WIN, -150, 2000)
     make.set_result_filter(GameResult.SENNICHITE, None, 150)
     make.set_diff_value_limit(300)
     make.set_value_limit(800)
-    sfens: List[str] = make.run()
+    sfens: List[str] = make.run(csa_path)
 
     # ファイル出力
     with output_path.open('w', encoding='utf_8') as f:

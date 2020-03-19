@@ -92,7 +92,7 @@ class Notation:
     moves: List[MoveData] = field(init=False, default_factory=list)
 
 
-def read_csa(path: Path) -> Optional[Notation]:  # noqa: C901
+def read_csa(path: Path) -> Notation:  # noqa: C901
     lines = path.read_text().splitlines()
 
     notation = Notation()
