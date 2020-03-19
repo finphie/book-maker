@@ -229,8 +229,8 @@ class MakeSfen:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('input', help='csaファイルのディレクトリ')
-    parser.add_argument('-o', '--output', default='book.sfen', help='sfenの出力先')
+    parser.add_argument('input', type=Path, help='csaファイルのディレクトリ')
+    parser.add_argument('-o', '--output', type=Path, default='book.sfen', help='sfenの出力先')
 
     rate_group = parser.add_argument_group('レーティング')
     rate_group.add_argument('--min_rate', type=int, default=0, help='レーティング最小値')
@@ -242,21 +242,21 @@ if __name__ == '__main__':
     value_group.add_argument('--min_white_value', type=int, default=-150, help='後手勝利時における、後手側から見た最小評価値')
     value_group.add_argument('--max_white_value', type=int, default=100000, help='後手勝利時における、後手側から見た最大評価値')
     value_group.add_argument('--draw_value', type=int, default=150, help='千日手における、手番側から見た最大評価値')
-    value_group.add_argument('--end_value', type=int, default=0, help='勝利側から見た終局時の最小評価値')
     value_group.add_argument('--diff_value', type=int, default=100000, help='直前の評価値との差')
+    value_group.add_argument('--end_value', type=int, default=0, help='勝利側から見た終局時の最小評価値')
 
     args = parser.parse_args()
-    csa_path = Path(args.input)
-    output_path = Path(args.output)
+    output_path: Path = args.output
 
     make = MakeSfen()
-    make.set_rate_limit(3800, 1000000)
-    make.set_result_filter(GameResult.BLACK_WIN, -10, 2000)
-    make.set_result_filter(GameResult.WHITE_WIN, -150, 2000)
-    make.set_result_filter(GameResult.SENNICHITE, None, 150)
-    make.set_diff_value_limit(300)
-    make.set_value_limit(800)
-    sfens: List[str] = make.run(csa_path)
+    make.set_rate_limit(args.min_rate, args.max_rate)
+    make.set_result_filter(GameResult.BLACK_WIN, args.min_black_value, args.max_black_value)
+    make.set_result_filter(GameResult.WHITE_WIN, args.min_white_value, args.max_white_value)
+    make.set_result_filter(GameResult.SENNICHITE, None, args.draw_value)
+    make.set_diff_value_limit(args.diff_value)
+    make.set_value_limit(args.end_value)
+
+    sfens: List[str] = make.run(args.input)
 
     # ファイル出力
     with output_path.open('w', encoding='utf_8') as f:
